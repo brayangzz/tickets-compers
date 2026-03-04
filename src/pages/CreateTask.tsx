@@ -9,9 +9,9 @@ interface ApiUser {
   iIdUser?: number; ildUser?: number;
   employeeName: string; roleName?: string;
   iIdRol?: number; ildRol?: number;
+  departmentName?: string; // Aseguramos que la interfaz contenga el departamento
 }
 
-// CORRECCIÓN: Se agregó 'id: string;' a la interfaz para que TypeScript no marque error
 interface FilePreview { 
   file: File; 
   previewUrl: string; 
@@ -301,23 +301,48 @@ export const CreateTask = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // NUEVO: Estado para almacenar el departamento detectado del usuario
+  const [userDepartment, setUserDepartment] = useState<string>("Sistemas (Default)");
+
   const isValid = title.trim().length > 0 && description.trim().length > 0 && startDate.length > 0 && (taskType === "personal" || selectedUserId !== "");
 
   useEffect(() => {
-    const fetchSubordinates = async () => {
+    const fetchSubordinatesAndUserInfo = async () => {
       setIsLoadingUsers(true);
       try {
+        const token = localStorage.getItem("token");
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [usersRes, rolesRes] = await Promise.all([
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users"),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles"),
+          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers }),
+          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles", { headers }),
         ]);
+
         if (usersRes.ok && rolesRes.ok) {
           const usersData: ApiUser[] = await usersRes.json();
           const rolesData = await rolesRes.json();
+          
           const userStr = localStorage.getItem("user");
           let myRoleId = 0;
-          if (userStr) { try { const u = JSON.parse(userStr); myRoleId = parseInt(u.ildRol || u.iIdRol || "0"); } catch (e) { console.error(e); } }
+          let currentUserId = 0;
+
+          if (userStr) { 
+            try { 
+              const u = JSON.parse(userStr); 
+              myRoleId = parseInt(u.ildRol || u.iIdRol || "0"); 
+              currentUserId = parseInt(u.iIdUser || u.ildUser || "0");
+            } catch (e) { console.error(e); } 
+          }
           
+          // --- DETECTAR DEPARTAMENTO DEL USUARIO ACTUAL ---
+          if (currentUserId > 0) {
+            const currentUserData = usersData.find(u => (u.iIdUser === currentUserId) || (u.ildUser === currentUserId));
+            if (currentUserData && currentUserData.departmentName) {
+                setUserDepartment(currentUserData.departmentName);
+            }
+          }
+          // ------------------------------------------------
+
           if (myRoleId === 0) { 
               setUsers([]); 
               return; 
@@ -341,21 +366,19 @@ export const CreateTask = () => {
           setIsLoadingUsers(false);
       }
     };
-    fetchSubordinates();
+    fetchSubordinatesAndUserInfo();
   }, []);
 
-  // CORRECCIÓN: Agregamos id nativo a los archivos para que AnimatePresence no de error
   const processFiles = (newFiles: File[]) => setFiles((prev) => [...prev, ...newFiles.map((file) => ({
     file, 
     previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : "", 
     isImage: file.type.startsWith("image/"),
-    id: Math.random().toString(36).substring(2, 10) // ID seguro agregado
+    id: Math.random().toString(36).substring(2, 10)
   }))]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files?.length) processFiles(Array.from(e.target.files)); };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) processFiles(Array.from(e.dataTransfer.files)); };
   
-  // CORRECCIÓN: Borrar por ID en lugar de índice para evitar bugs de animación
   const removeFile = (idToRemove: string) => setFiles((prev) => { 
       const item = prev.find((i) => i.id === idToRemove);
       if (item && item.isImage) URL.revokeObjectURL(item.previewUrl); 
@@ -402,7 +425,7 @@ export const CreateTask = () => {
         </motion.div>
         <motion.div initial={{ scale: 0.8, opacity: 0.5 }} animate={{ scale: 1.6, opacity: 0 }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }} className="absolute inset-0 bg-emerald-500/20 rounded-full z-0" />
       </div>
-      <motion.h2 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }} className="text-4xl font-extrabold text-slate-900 dark:text-white mb-2">¡Tarea Creada!</motion.h2>
+      <motion.h2 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }} className="text-4xl font-extrabold text-slate-900 dark:text-white mb-2">¡Tarea Creado!</motion.h2>
       <motion.p initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="text-slate-500 dark:text-slate-400">Se ha agendado correctamente.</motion.p>
     </div>
   );
@@ -546,10 +569,13 @@ export const CreateTask = () => {
                 <label className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-300 ml-1 flex items-center gap-1.5">
                   <span className="material-symbols-rounded text-[16px] text-slate-400">lock</span> Departamento
                 </label>
-                <div className="w-full flex items-center gap-3 px-5 py-3.5 bg-slate-50 dark:bg-[#0f172a]/70 border border-slate-200 dark:border-slate-800 rounded-2xl opacity-70 cursor-not-allowed shadow-inner">
-                  <span className="material-symbols-rounded text-[20px] text-slate-400 dark:text-slate-500">domain</span>
-                  <span className="text-[15px] font-medium text-slate-500 dark:text-slate-500">Sistemas (Default)</span>
-                  <span className="material-symbols-rounded text-[20px] text-slate-400 dark:text-slate-600 ml-auto">lock</span>
+                {/* CAMBIO AQUÍ: Ahora muestra el departamento real extraído del usuario y sigue estando bloqueado visualmente */}
+                <div className="w-full flex items-center gap-3 px-5 py-3.5 bg-slate-100/50 dark:bg-[#131c2f]/40 border border-slate-200 dark:border-slate-800 rounded-2xl cursor-default shadow-none transition-all">
+                  <span className="material-symbols-rounded text-[20px] text-blue-500/70 dark:text-blue-400/70">domain</span>
+                  <span className="text-[15px] font-bold text-slate-700 dark:text-slate-200 truncate flex-1">
+                    {isLoadingUsers ? "Cargando..." : userDepartment}
+                  </span>
+                  <span className="material-symbols-rounded text-[20px] text-slate-400 dark:text-slate-500 opacity-70 ml-auto">lock</span>
                 </div>
               </div>
 

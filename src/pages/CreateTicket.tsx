@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { createTicket, uploadTicketFile } from "../services/ticketService";
@@ -11,18 +12,254 @@ interface FileWithPreview {
   id: string;
 }
 
+// ─── ICONOS PARA LOS SELECTORES ──────────────────────────────────────────────
+const DEPT_ICONS: Record<string, string> = {
+  default: "domain",
+  ventas: "storefront", comercial: "shopping_bag",
+  finanzas: "account_balance", contabilidad: "calculate",
+  ti: "computer", tecnología: "computer", sistemas: "computer",
+  rrhh: "diversity_3", "recursos humanos": "diversity_3",
+  operaciones: "settings", logística: "local_shipping",
+  marketing: "campaign", legal: "gavel",
+  producción: "precision_manufacturing", calidad: "verified",
+};
+
+const BRANCH_ICONS: Record<string, string> = {
+  default: "store",
+  matriz: "corporate_fare", principal: "corporate_fare",
+  norte: "north", sur: "south", este: "east", oeste: "west",
+  cdmx: "location_city", monterrey: "location_city",
+  guadalajara: "location_city", puebla: "location_city",
+};
+
+const getIconForOption = (label: string, map: Record<string, string>): string => {
+  const key = label.toLowerCase();
+  for (const [k, icon] of Object.entries(map)) {
+    if (k !== "default" && key.includes(k)) return icon;
+  }
+  return map.default || "circle";
+};
+
+// ─── Portal pos ────────────────────────────────────────────────────────────
+const usePortalPos = () => {
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const updatePos = () => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
+  };
+  return { triggerRef, pos, updatePos };
+};
+
+// ─── CustomSelect Premium (Con Ordenamiento, Búsqueda y Bloqueo) ─────────────
+const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasError = false, iconMap, disabled = false }: {
+  name: string; value: number;
+  onChange: (name: string, v: number) => void;
+  options: { value: number; label: string }[];
+  placeholder: string; icon: string; hasError?: boolean;
+  iconMap?: Record<string, string>;
+  disabled?: boolean; // <-- Nueva propiedad
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const { triggerRef, pos, updatePos } = usePortalPos();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Ordenar opciones alfabéticamente
+  const sortedOptions = useMemo(() => {
+    return [...options].sort((a, b) => a.label.localeCompare(b.label));
+  }, [options]);
+
+  const selected = sortedOptions.find((o) => o.value === value);
+
+  useEffect(() => {
+    document.documentElement.style.scrollbarGutter = "stable";
+    return () => { document.documentElement.style.scrollbarGutter = ""; };
+  }, []);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node))
+        setIsOpen(false);
+    };
+    const handleScroll = () => { if (isOpen) updatePos(); };
+    document.addEventListener("mousedown", handleOutside);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", updatePos);
+    };
+  }, [isOpen, updatePos]);
+
+  // Búsqueda por teclado (Type-to-Select)
+  useEffect(() => {
+    if (!isOpen || disabled) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setIsOpen(false); return; }
+      
+      if (e.key.length === 1 && /[a-zA-Z0-9\s]/i.test(e.key)) {
+        const newQuery = searchQuery + e.key.toLowerCase();
+        setSearchQuery(newQuery);
+
+        const match = sortedOptions.find(opt => opt.label.toLowerCase().startsWith(newQuery));
+        if (match) {
+            const element = document.getElementById(`option-${name}-${match.value}`);
+            if (element && dropdownRef.current) {
+                const list = dropdownRef.current.querySelector('ul');
+                if (list) list.scrollTo({ top: element.offsetTop - 10, behavior: 'smooth' });
+            }
+        }
+
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = setTimeout(() => setSearchQuery(""), 1000);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, searchQuery, sortedOptions, name, disabled]);
+
+  // Clases dinámicas dependiendo de si está bloqueado o no
+  const containerClasses = disabled
+    ? "bg-slate-100/50 dark:bg-[#131c2f]/40 border-slate-200 dark:border-slate-800 cursor-default shadow-none"
+    : hasError
+    ? "bg-slate-50 dark:bg-[#0f172a] border-rose-500 ring-2 ring-rose-500/20 cursor-pointer"
+    : isOpen
+    ? "bg-white dark:bg-[#131c2f] border-blue-500 ring-4 ring-blue-500/15 cursor-pointer"
+    : "bg-slate-50 dark:bg-[#0f172a] border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 cursor-pointer";
+
+  return (
+    <>
+      <div
+        ref={triggerRef}
+        onClick={() => { 
+            if (disabled) return; // Evita que se abra si está bloqueado
+            updatePos(); setIsOpen(!isOpen); 
+        }}
+        tabIndex={disabled ? -1 : 0} 
+        className={`w-full flex items-center gap-3 px-5 py-4 border rounded-[20px] transition-all duration-200 select-none shadow-inner group focus:outline-none ${containerClasses}`}
+      >
+        <motion.span
+          animate={{ rotate: isOpen ? 10 : 0, scale: isOpen ? 1.1 : 1 }}
+          transition={{ duration: 0.2 }}
+          className={`material-symbols-rounded text-[22px] shrink-0 transition-colors ${
+            disabled ? "text-blue-500/70 dark:text-blue-400/70" :
+            isOpen || value !== 0 ? "text-blue-500 dark:text-blue-400" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-slate-200"
+          }`}
+        >
+          {selected && iconMap ? getIconForOption(selected.label, iconMap) : icon}
+        </motion.span>
+        
+        <span className={`flex-1 text-[15px] font-medium truncate ${
+            disabled ? "text-slate-700 dark:text-slate-200 font-bold" : // Se lee claro pero distinto
+            value === 0 ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-white"
+        }`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        
+        <motion.span
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          className={`material-symbols-rounded text-[20px] shrink-0 ${
+              disabled ? "text-slate-400 dark:text-slate-500 opacity-70" :
+              isOpen ? "text-blue-500 dark:text-blue-400" : "text-slate-400"
+          }`}
+        >
+          {disabled ? "lock" : "expand_more"} {/* Muestra un candado si está bloqueado */}
+        </motion.span>
+      </div>
+
+      {isOpen && !disabled && createPortal(
+        <div ref={dropdownRef} style={{ position: "absolute", top: pos.top, left: pos.left, width: Math.max(pos.width, 260), zIndex: 9999 }}>
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            className="bg-white dark:bg-[#1a2540] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-[0_24px_48px_-12px_rgba(0,0,0,0.2)] dark:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden p-2"
+          >
+            <ul className="max-h-64 overflow-y-auto flex flex-col gap-0.5 pr-1 comments-scroll">
+              {sortedOptions.length === 0
+                ? <li className="px-4 py-4 text-sm text-slate-500 text-center font-medium">No hay opciones disponibles</li>
+                : sortedOptions.map((opt, i) => {
+                  const optIcon = iconMap ? getIconForOption(opt.label, iconMap) : "circle";
+                  const isSelected = value === opt.value;
+                  const isHighlighted = searchQuery && opt.label.toLowerCase().startsWith(searchQuery);
+
+                  return (
+                    <motion.li
+                      key={opt.value}
+                      id={`option-${name}-${opt.value}`} 
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.028, duration: 0.15, ease: "easeOut" }}
+                      onClick={() => { onChange(name, opt.value); setIsOpen(false); }}
+                      whileHover={{ x: 3 }}
+                      className={`px-4 py-3 text-[14px] cursor-pointer rounded-xl transition-colors duration-150 flex items-center gap-3 font-semibold ${
+                        isSelected
+                          ? "bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30"
+                          : isHighlighted 
+                          ? "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white border border-transparent"
+                          : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#0f172a]/80 border border-transparent"
+                      }`}
+                    >
+                      <motion.span
+                        animate={{ scale: isSelected ? 1 : 0.85, opacity: isSelected ? 1 : 0.55 }}
+                        transition={{ duration: 0.2 }}
+                        className={`material-symbols-rounded text-[18px] shrink-0 ${isSelected ? "text-blue-500 dark:text-blue-400" : "text-slate-400 dark:text-slate-300"}`}
+                      >
+                        {optIcon}
+                      </motion.span>
+                      <span className="truncate tracking-wide">{opt.label}</span>
+                      <AnimatePresence>
+                        {isSelected && (
+                          <motion.span
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ duration: 0.18, type: "spring", stiffness: 300 }}
+                            className="material-symbols-rounded text-[16px] text-blue-500 dark:text-blue-400 ml-auto shrink-0"
+                          >
+                            check_circle
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.li>
+                  );
+                })
+              }
+            </ul>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
+
 export const CreateTicket = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState<number | string>("");
-  const [selectedDept, setSelectedDept] = useState<number | string>("");
+  const [selectedBranch, setSelectedBranch] = useState<number>(0);
+  const [selectedDept, setSelectedDept] = useState<number>(0);
   const [fileData, setFileData] = useState<FileWithPreview[]>([]);
 
   const [branchesList, setBranchesList] = useState<Branch[]>([]);
   const [departmentsList, setDepartmentsList] = useState<Department[]>([]);
+  
+  // NUEVO: Estados para bloquear los selects si se autocompletan
+  const [isBranchLocked, setIsBranchLocked] = useState(false);
+  const [isDeptLocked, setIsDeptLocked] = useState(false);
+
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusText, setStatusText] = useState("Generar Ticket");
@@ -30,38 +267,67 @@ export const CreateTicket = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Estados y Refs para los menús desplegables personalizados
-  const [isBranchOpen, setIsBranchOpen] = useState(false);
-  const [isDeptOpen, setIsDeptOpen] = useState(false);
-  const branchRef = useRef<HTMLDivElement>(null);
-  const deptRef = useRef<HTMLDivElement>(null);
+  const isValid = title.trim().length > 0 && description.trim().length > 0 && selectedBranch !== 0 && selectedDept !== 0;
 
-  const isValid = title.trim().length > 0 && description.trim().length > 0 && selectedBranch !== "" && selectedDept !== "";
-
-  // Cargar catálogos
+  // Cargar catálogos e Inteligencia para Auto-Selección y Bloqueo
   useEffect(() => {
-    const loadCatalogs = async () => {
+    const loadCatalogsAndAutoSelect = async () => {
       try {
-        const [branchesData, deptsData] = await Promise.all([getBranches(), getDepartments()]);
-        setBranchesList(branchesData || []);
-        setDepartmentsList(deptsData || []);
+        const token = localStorage.getItem('token');
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        // Solicitamos los catálogos y el directorio completo de usuarios para buscar al actual
+        const [branchesData, deptsData, usersRes] = await Promise.all([
+          getBranches(), 
+          getDepartments(),
+          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers })
+        ]);
+
+        const bList = branchesData || [];
+        const dList = deptsData || [];
+        const usersList = usersRes.ok ? await usersRes.json() : [];
+        
+        setBranchesList(bList);
+        setDepartmentsList(dList);
+
+        // LEER LOCALSTORAGE PARA SABER QUIÉN ESTÁ LOGUEADO
+        const userString = localStorage.getItem('user');
+        if (userString) {
+            const userObj = JSON.parse(userString);
+            const currentUserId = Number(userObj.iIdUser || userObj.ildUser || userObj.idUser || 0);
+
+            if (currentUserId > 0 && Array.isArray(usersList)) {
+                // Buscar al usuario logueado dentro de la lista completa para leer su sucursal y depto reales
+                const currentUserData = usersList.find((u: any) => (u.iIdUser === currentUserId) || (u.ildUser === currentUserId));
+                
+                if (currentUserData) {
+                    // Auto-seleccionar y bloquear Sucursal
+                    if (currentUserData.branchName) {
+                        const matchBranch = bList.find((b: Branch) => b.sBranch.toLowerCase() === currentUserData.branchName.toLowerCase());
+                        if (matchBranch) {
+                            setSelectedBranch(matchBranch.iIdBranch);
+                            setIsBranchLocked(true); // Bloquear
+                        }
+                    }
+                    
+                    // Auto-seleccionar y bloquear Departamento
+                    if (currentUserData.departmentName) {
+                        const matchDept = dList.find((d: Department) => d.sDepartment.toLowerCase() === currentUserData.departmentName.toLowerCase());
+                        if (matchDept) {
+                            setSelectedDept(matchDept.iIdDepartment);
+                            setIsDeptLocked(true); // Bloquear
+                        }
+                    }
+                }
+            }
+        }
       } catch (err) {
         console.error("Error cargando catálogos", err);
       } finally {
         setIsLoadingData(false);
       }
     };
-    loadCatalogs();
-  }, []);
-
-  // Clic fuera de los selectores para cerrarlos
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (branchRef.current && !branchRef.current.contains(event.target as Node)) setIsBranchOpen(false);
-      if (deptRef.current && !deptRef.current.contains(event.target as Node)) setIsDeptOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    loadCatalogsAndAutoSelect();
   }, []);
 
   // Limpiar URLs de previsualización
@@ -104,7 +370,7 @@ export const CreateTicket = () => {
       setErrorMessage("El título y la descripción son obligatorios.");
       return;
     }
-    if (!selectedBranch || !selectedDept) {
+    if (selectedBranch === 0 || selectedDept === 0) {
       setErrorMessage("Debes seleccionar tu sucursal y tu departamento.");
       return;
     }
@@ -115,10 +381,10 @@ export const CreateTicket = () => {
       const payload = {
         sName: title.trim(),
         sDescription: description.trim(),
-        iIdTaskType: 17,
-        iIdStatus: 1,
-        iIdBranch: Number(selectedBranch),
-        iIdDepartment: Number(selectedDept),
+        iIdTaskType: 17, // ID por defecto de tu sistema para tickets nuevos
+        iIdStatus: 1, // ID para estatus "Pendiente"
+        iIdBranch: selectedBranch,
+        iIdDepartment: selectedDept,
         dTaskStartDate: new Date().toISOString(),
       };
       const createdTicket = await createTicket(payload);
@@ -184,7 +450,7 @@ export const CreateTicket = () => {
     );
   }
 
-  // --- CLASES REUTILIZABLES PARA INPUTS PREMIUM (Adaptables al tema) ---
+  // --- CLASES REUTILIZABLES PARA INPUTS PREMIUM ---
   const inputPremiumClass = "w-full px-5 py-4 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-700/80 rounded-2xl text-[15px] text-slate-800 dark:text-white focus:bg-white dark:focus:bg-[#131c2f] focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 outline-none transition-all hover:border-slate-300 dark:hover:border-slate-600 placeholder:text-slate-400 dark:placeholder:text-slate-500 font-medium shadow-inner";
 
   // --- VISTA FORMULARIO ---
@@ -283,7 +549,7 @@ export const CreateTicket = () => {
               </div>
             </div>
 
-            {/* SUCURSAL + DEPARTAMENTO (CUSTOM PREMIUM SELECTS) */}
+            {/* SUCURSAL + DEPARTAMENTO */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
               
               {/* SUCURSAL */}
@@ -292,43 +558,17 @@ export const CreateTicket = () => {
                   <span className="material-symbols-rounded text-[16px] text-blue-500">store</span>
                   Sucursal <span className="text-rose-500">*</span>
                 </label>
-                <div className="relative" ref={branchRef}>
-                  <motion.button
-                    type="button"
-                    whileHover={!isLoadingData ? { scale: 1.01 } : {}}
-                    whileTap={!isLoadingData ? { scale: 0.98 } : {}}
-                    onClick={() => !isLoadingData && setIsBranchOpen(!isBranchOpen)}
-                    className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all shadow-inner ${
-                      isBranchOpen ? "bg-white dark:bg-[#131c2f] border-blue-500 ring-4 ring-blue-500/15" : "bg-slate-50 dark:bg-[#0f172a] border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
-                    } ${isLoadingData ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <span className={`font-medium text-[15px] truncate ${selectedBranch === "" ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-white"}`}>
-                      {isLoadingData ? "Cargando..." : selectedBranch === "" ? "Selecciona tu sucursal" : branchesList.find((b) => b.iIdBranch === Number(selectedBranch))?.sBranch}
-                    </span>
-                    <span className="material-symbols-rounded text-slate-400" style={{ transform: isBranchOpen ? "rotate(180deg)" : "none" }}>expand_more</span>
-                  </motion.button>
-                  <AnimatePresence>
-                    {isBranchOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }} transition={{ duration: 0.2 }}
-                        className="absolute left-0 right-0 mt-2 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-[100] p-2"
-                      >
-                        <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll pr-1">
-                          {branchesList.map((b) => (
-                            <button
-                              type="button"
-                              key={b.iIdBranch}
-                              onClick={() => { setSelectedBranch(b.iIdBranch); setIsBranchOpen(false); setErrorMessage(null); }}
-                              className={`px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${selectedBranch === b.iIdBranch ? "bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0f172a] border border-transparent"}`}
-                            >
-                              {b.sBranch}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                <CustomSelect
+                  name="branch"
+                  value={selectedBranch as number}
+                  onChange={(_, val) => { setSelectedBranch(val); setErrorMessage(null); }}
+                  options={branchesList.map(b => ({ value: b.iIdBranch, label: b.sBranch }))}
+                  placeholder={isLoadingData ? "Cargando..." : "Selecciona tu sucursal"}
+                  icon="store"
+                  iconMap={BRANCH_ICONS}
+                  hasError={errorMessage !== null && selectedBranch === 0}
+                  disabled={isBranchLocked} // <-- Bloqueo aplicado
+                />
               </div>
 
               {/* DEPARTAMENTO */}
@@ -337,43 +577,17 @@ export const CreateTicket = () => {
                   <span className="material-symbols-rounded text-[16px] text-indigo-500">domain</span>
                   Departamento <span className="text-rose-500">*</span>
                 </label>
-                <div className="relative" ref={deptRef}>
-                  <motion.button
-                    type="button"
-                    whileHover={!isLoadingData ? { scale: 1.01 } : {}}
-                    whileTap={!isLoadingData ? { scale: 0.98 } : {}}
-                    onClick={() => !isLoadingData && setIsDeptOpen(!isDeptOpen)}
-                    className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all shadow-inner ${
-                      isDeptOpen ? "bg-white dark:bg-[#131c2f] border-indigo-500 ring-4 ring-indigo-500/15" : "bg-slate-50 dark:bg-[#0f172a] border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
-                    } ${isLoadingData ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <span className={`font-medium text-[15px] truncate ${selectedDept === "" ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-white"}`}>
-                      {isLoadingData ? "Cargando..." : selectedDept === "" ? "Selecciona tu departamento" : departmentsList.find((d) => d.iIdDepartment === Number(selectedDept))?.sDepartment}
-                    </span>
-                    <span className="material-symbols-rounded text-slate-400" style={{ transform: isDeptOpen ? "rotate(180deg)" : "none" }}>expand_more</span>
-                  </motion.button>
-                  <AnimatePresence>
-                    {isDeptOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }} transition={{ duration: 0.2 }}
-                        className="absolute left-0 right-0 mt-2 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-[100] p-2"
-                      >
-                        <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll pr-1">
-                          {departmentsList.map((d) => (
-                            <button
-                              type="button"
-                              key={d.iIdDepartment}
-                              onClick={() => { setSelectedDept(d.iIdDepartment); setIsDeptOpen(false); setErrorMessage(null); }}
-                              className={`px-4 py-3 rounded-xl text-left text-sm font-bold transition-all ${selectedDept === d.iIdDepartment ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0f172a] border border-transparent"}`}
-                            >
-                              {d.sDepartment}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                <CustomSelect
+                  name="dept"
+                  value={selectedDept as number}
+                  onChange={(_, val) => { setSelectedDept(val); setErrorMessage(null); }}
+                  options={departmentsList.map(d => ({ value: d.iIdDepartment, label: d.sDepartment }))}
+                  placeholder={isLoadingData ? "Cargando..." : "Selecciona tu departamento"}
+                  icon="domain"
+                  iconMap={DEPT_ICONS}
+                  hasError={errorMessage !== null && selectedDept === 0}
+                  disabled={isDeptLocked} // <-- Bloqueo aplicado
+                />
               </div>
 
             </div>

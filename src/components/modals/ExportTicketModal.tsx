@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -10,6 +11,108 @@ interface Props {
   onClose: () => void;
   data: Ticket[];
 }
+
+// ─── UTILIDAD DE PORTAL PARA SELECT ──────────────────────────────────────────
+const usePortalPos = () => {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const updatePos = () => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
+  };
+  return { triggerRef, pos, updatePos };
+};
+
+// ─── DROPDOWN PREMIUM (SIN SALTOS Y RESPONSIVO) ──────────────────────────────
+const CustomDropdown = ({ value, onChange, options, placeholder }: { value: string | number, onChange: (v: string) => void, options: { id: string | number, label: string }[], placeholder: string }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const { triggerRef, pos, updatePos } = usePortalPos();
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleOutside = (e: MouseEvent) => {
+            if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        const handleScroll = () => { if (isOpen) updatePos(); };
+        document.addEventListener("mousedown", handleOutside);
+        // Usamos capture: true para eventos de scroll en contenedores internos
+        window.addEventListener("scroll", handleScroll, true);
+        window.addEventListener("resize", updatePos);
+        return () => {
+            document.removeEventListener("mousedown", handleOutside);
+            window.removeEventListener("scroll", handleScroll, true);
+            window.removeEventListener("resize", updatePos);
+        };
+    }, [isOpen, updatePos]);
+
+    const selectedLabel = value === "Todos" ? placeholder : options.find(o => String(o.id) === String(value))?.label || placeholder;
+
+    return (
+        <>
+            <motion.button
+                ref={triggerRef}
+                type="button"
+                whileHover={{ scale: 1.02 }} 
+                whileTap={{ scale: 0.98 }}
+                onClick={(e) => { 
+                    e.preventDefault(); 
+                    e.stopPropagation(); 
+                    updatePos(); 
+                    setIsOpen(!isOpen); 
+                }}
+                className={`flex items-center justify-between gap-1.5 sm:gap-2 h-11 w-full px-4 sm:px-4 bg-slate-50 dark:bg-slate-900/50 border hover:border-slate-300 dark:hover:border-slate-600 rounded-xl text-[13px] font-bold transition-all shrink-0 ${isOpen ? "border-blue-500 ring-2 ring-blue-500/20 text-blue-600 dark:text-blue-400 bg-white dark:bg-[#131c2f]" : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"}`}
+            >
+                <span className="truncate">{selectedLabel}</span>
+                <motion.span animate={{ rotate: isOpen ? 180 : 0 }} className="material-symbols-rounded text-[18px] sm:text-[20px] text-slate-400 shrink-0">expand_more</motion.span>
+            </motion.button>
+
+            {createPortal(
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div 
+                            ref={dropdownRef} 
+                            style={{ position: "absolute", top: pos.top, left: pos.left, width: Math.max(pos.width, 160), zIndex: 999999 }}
+                            initial={{ opacity: 0, y: -10, scale: 0.95 }} 
+                            animate={{ opacity: 1, y: 0, scale: 1 }} 
+                            exit={{ opacity: 0, y: -10, scale: 0.95 }} 
+                            transition={{ duration: 0.2 }}
+                            className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden p-2"
+                        >
+                            <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll">
+                                {/* Opcional: "Todos" si aplica */}
+                                {options.some(o => o.id === "Todos") && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => { onChange("Todos"); setIsOpen(false); }} 
+                                        className={`px-3 py-2.5 rounded-xl text-left text-[13px] font-bold transition-all ${value === "Todos" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                                    >
+                                        Todos
+                                    </button>
+                                )}
+                                
+                                {options.filter(o => o.id !== "Todos").map(opt => (
+                                    <button 
+                                        type="button"
+                                        key={opt.id} 
+                                        onClick={() => { onChange(String(opt.id)); setIsOpen(false); }} 
+                                        className={`px-3 py-2.5 rounded-xl text-left text-[13px] font-bold transition-all flex justify-between items-center ${String(value) === String(opt.id) ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                                    >
+                                        <span className="truncate">{opt.label}</span>
+                                        {String(value) === String(opt.id) && <span className="material-symbols-rounded text-[18px] shrink-0">check</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+        </>
+    );
+};
 
 export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
@@ -99,8 +202,12 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
 
   const filteredCount = getFilteredData().length;
 
+  // Preparamos opciones para los dropdowns
+  const monthOptions = months.map((m, i) => ({ id: i, label: m }));
+  const yearOptions = years.map(y => ({ id: y, label: String(y) }));
+  const statusOptions = uniqueStatuses.map(s => ({ id: s, label: s }));
+
   // El wrapper AnimatePresence + motion lo maneja el padre (Tickets.tsx)
-  // Este componente solo retorna el contenido del modal
   return (
     <div className="relative w-full max-w-lg bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/60 rounded-[32px] shadow-2xl overflow-hidden flex flex-col">
       
@@ -127,56 +234,28 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
       </div>
 
       {/* BODY */}
-      <div className="p-8 flex flex-col gap-6">
+      <div className="p-8 flex flex-col gap-8">
 
         {/* FILTROS: Mes / Año / Estatus */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            {
-              label: "Mes",
-              value: selectedMonth,
-              onChange: (v: string) => setSelectedMonth(Number(v)),
-              options: months.map((m, i) => ({ label: m, value: i })),
-            },
-            {
-              label: "Año",
-              value: selectedYear,
-              onChange: (v: string) => setSelectedYear(Number(v)),
-              options: years.map((y) => ({ label: String(y), value: y })),
-            },
-            {
-              label: "Estatus",
-              value: selectedStatus,
-              onChange: (v: string) => setSelectedStatus(v),
-              options: uniqueStatuses.map((s) => ({ label: s, value: s })),
-            },
-          ].map(({ label, value, onChange, options }) => (
-            <div key={label} className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-                {label}
-              </label>
-              <div className="relative">
-                <select
-                  value={value}
-                  onChange={(e) => onChange(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all cursor-pointer pr-8"
-                >
-                  {options.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="material-symbols-rounded absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px] pointer-events-none">
-                  expand_more
-                </span>
-              </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Mes</label>
+              <CustomDropdown value={selectedMonth} onChange={(v) => setSelectedMonth(Number(v))} options={monthOptions} placeholder="Mes" />
             </div>
-          ))}
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Año</label>
+              <CustomDropdown value={selectedYear} onChange={(v) => setSelectedYear(Number(v))} options={yearOptions} placeholder="Año" />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Estatus</label>
+              <CustomDropdown value={selectedStatus} onChange={(v) => setSelectedStatus(v)} options={statusOptions} placeholder="Todos" />
+            </div>
         </div>
 
         {/* FORMATO */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
             Formato de archivo
           </label>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/Card";
@@ -113,7 +113,18 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
   const [isOpen, setIsOpen] = useState(false);
   const { triggerRef, pos, updatePos } = usePortalPos();
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const selected = options.find((o) => o.value === value);
+  
+  // SOLUCIÓN A TS(2503): Tipar correctamente el ref del temporizador
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Ordenar opciones alfabéticamente
+  const sortedOptions = useMemo(() => {
+    return [...options].sort((a, b) => a.label.localeCompare(b.label));
+  }, [options]);
+
+  // SOLUCIÓN A TS(7006): Tipar explícitamente 'o'
+  const selected = sortedOptions.find((o: { value: number; label: string }) => o.value === value);
 
   // FIX: reservar espacio del scrollbar permanentemente para evitar layout shift
   useEffect(() => {
@@ -121,7 +132,7 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
     return () => {
       document.documentElement.style.scrollbarGutter = "";
     };
-  }, []); 
+  }, []);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -137,19 +148,65 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("resize", updatePos);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePos]);
+
+  // Búsqueda por teclado (Type-to-Select)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignorar teclas especiales
+      if (e.key === 'Escape') {
+          setIsOpen(false);
+          return;
+      }
+      
+      // Permitir la navegación rápida con teclado
+      if (e.key.length === 1 && /[a-zA-Z0-9\s]/i.test(e.key)) {
+        const newQuery = searchQuery + e.key.toLowerCase();
+        setSearchQuery(newQuery);
+
+        // SOLUCIÓN A TS(7006): Tipar explícitamente 'opt'
+        const match = sortedOptions.find((opt: { value: number; label: string }) => opt.label.toLowerCase().startsWith(newQuery));
+        
+        if (match) {
+            // Desplazar la lista hasta el elemento encontrado
+            const element = document.getElementById(`option-${name}-${match.value}`);
+            if (element && dropdownRef.current) {
+                const list = dropdownRef.current.querySelector('ul');
+                if (list) {
+                     // Calcular la posición para hacer scroll suave
+                     const elementTop = element.offsetTop;
+                     list.scrollTo({ top: elementTop - 10, behavior: 'smooth' });
+                }
+            }
+        }
+
+        // Limpiar el string de búsqueda después de 1 segundo de inactividad
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = setTimeout(() => {
+          setSearchQuery("");
+        }, 1000);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, searchQuery, sortedOptions, name]);
 
   return (
     <>
       <div
         ref={triggerRef}
         onClick={() => { updatePos(); setIsOpen(!isOpen); }}
-        className={`w-full flex items-center gap-3 px-5 py-4 bg-slate-50 dark:bg-[#0f172a] border rounded-[20px] cursor-pointer transition-all duration-200 select-none shadow-inner group ${
+        // Agregado tabIndex para que el div pueda recibir el foco y capturar eventos de teclado
+        tabIndex={0} 
+        className={`w-full flex items-center gap-3 px-5 py-4 bg-slate-50 dark:bg-[#0f172a] border rounded-[20px] cursor-pointer transition-all duration-200 select-none shadow-inner group focus:outline-none ${
           hasError
             ? "border-rose-500 ring-2 ring-rose-500/20"
             : isOpen
             ? "bg-white dark:bg-[#131c2f] border-blue-500 ring-4 ring-blue-500/15"
-            : "border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
+            : "border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15"
         }`}
       >
         <motion.span
@@ -183,14 +240,18 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
             className="bg-white dark:bg-[#1a2540] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-[0_24px_48px_-12px_rgba(0,0,0,0.2)] dark:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden p-2"
           >
             <ul className="max-h-64 overflow-y-auto flex flex-col gap-0.5 pr-1 comments-scroll">
-              {options.length === 0
+              {sortedOptions.length === 0
                 ? <li className="px-4 py-4 text-sm text-slate-500 text-center font-medium">No hay opciones disponibles</li>
-                : options.map((opt, i) => {
+                // SOLUCIÓN A TS(7006): Tipar explícitamente 'opt' e 'i'
+                : sortedOptions.map((opt: { value: number; label: string }, i: number) => {
                   const optIcon = iconMap ? getIconForOption(opt.label, iconMap) : "circle";
                   const isSelected = value === opt.value;
+                  const isHighlighted = searchQuery && opt.label.toLowerCase().startsWith(searchQuery);
+
                   return (
                     <motion.li
                       key={opt.value}
+                      id={`option-${name}-${opt.value}`} // Añadido ID para el scroll
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.028, duration: 0.15, ease: "easeOut" }}
@@ -199,6 +260,8 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
                       className={`px-4 py-3 text-[14px] cursor-pointer rounded-xl transition-colors duration-150 flex items-center gap-3 font-semibold ${
                         isSelected
                           ? "bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30"
+                          : isHighlighted 
+                          ? "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white border border-transparent"
                           : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#0f172a]/80 border border-transparent"
                       }`}
                     >

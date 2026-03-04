@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
 import { motion, AnimatePresence } from "framer-motion";
-import { getStatuses, type Status } from "../services/catalogService";
 
+// --- INTERFACES LOCALES ---
 interface ApiAssignedTask {
     iIdTask: number;
     sName?: string; 
@@ -17,6 +18,12 @@ interface ApiAssignedTask {
     sDescription: string;
     dTaskStartDate: string | null;
     dDateUserCreate: string | null;
+}
+
+interface ApiStatus {
+    iIdStatus: number;
+    sStatus: string;
+    bActive?: boolean; 
 }
 
 const getInitials = (name: string) => {
@@ -32,72 +39,186 @@ const getAvatarGradient = (id: number) => {
     return gradients[id % gradients.length];
 };
 
+// ─── UTILIDAD DE PORTAL PARA SELECT ──────────────────────────────────────────
+const usePortalPos = () => {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const updatePos = () => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
+  };
+  return { triggerRef, pos, updatePos };
+};
+
+// ─── DROPDOWN PREMIUM (SIN SALTOS Y RESPONSIVO) ──────────────────────────────
+const CustomDropdown = ({ value, onChange, options, placeholder }: { value: string, onChange: (v: string) => void, options: string[], placeholder: string }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const { triggerRef, pos, updatePos } = usePortalPos();
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleOutside = (e: MouseEvent) => {
+            if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        const handleScroll = () => { if (isOpen) updatePos(); };
+        document.addEventListener("mousedown", handleOutside);
+        window.addEventListener("scroll", handleScroll, true);
+        window.addEventListener("resize", updatePos);
+        return () => {
+            document.removeEventListener("mousedown", handleOutside);
+            window.removeEventListener("scroll", handleScroll, true);
+            window.removeEventListener("resize", updatePos);
+        };
+    }, [isOpen, updatePos]);
+
+    return (
+        <>
+            <motion.button
+                ref={triggerRef}
+                type="button"
+                whileHover={{ scale: 1.02 }} 
+                whileTap={{ scale: 0.98 }}
+                onClick={(e) => { 
+                    e.preventDefault(); 
+                    e.stopPropagation(); 
+                    updatePos(); 
+                    setIsOpen(!isOpen); 
+                }}
+                className={`flex items-center justify-between gap-1.5 sm:gap-2 h-11 w-full px-4 sm:px-5 bg-slate-50 dark:bg-slate-900/50 border hover:border-slate-200 dark:hover:border-slate-700 rounded-full text-[13px] sm:text-sm font-bold transition-all shrink-0 ${isOpen ? "border-blue-500 ring-2 ring-blue-500/20 text-blue-600 dark:text-blue-400" : "border-transparent text-slate-600 dark:text-slate-300"}`}
+            >
+                <span className="truncate">{value === "Todos" ? placeholder : value}</span>
+                <motion.span animate={{ rotate: isOpen ? 180 : 0 }} className="material-symbols-rounded text-[18px] sm:text-xl text-slate-400 shrink-0">expand_more</motion.span>
+            </motion.button>
+
+            {createPortal(
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div 
+                            ref={dropdownRef} 
+                            style={{ position: "absolute", top: pos.top, left: pos.left, width: Math.max(pos.width, 200), zIndex: 99999 }}
+                            initial={{ opacity: 0, y: -10, scale: 0.95 }} 
+                            animate={{ opacity: 1, y: 0, scale: 1 }} 
+                            exit={{ opacity: 0, y: -10, scale: 0.95 }} 
+                            transition={{ duration: 0.2 }}
+                            className="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden p-2"
+                        >
+                            <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll">
+                                <button 
+                                    type="button"
+                                    onClick={() => { onChange("Todos"); setIsOpen(false); }} 
+                                    className={`px-4 py-2.5 rounded-xl text-left text-[13px] sm:text-sm font-bold transition-all ${value === "Todos" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                                >
+                                    Todos los estatus
+                                </button>
+                                
+                                {options.length === 0 && (
+                                    <div className="px-4 py-3 text-xs text-slate-400 text-center font-medium">Buscando opciones...</div>
+                                )}
+
+                                {options.map(opt => (
+                                    <button 
+                                        type="button"
+                                        key={opt} 
+                                        onClick={() => { onChange(opt); setIsOpen(false); }} 
+                                        className={`px-4 py-2.5 rounded-xl text-left text-[13px] sm:text-sm font-bold transition-all flex justify-between items-center ${value === opt ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                                    >
+                                        <span className="truncate">{opt}</span>
+                                        {value === opt && <span className="material-symbols-rounded text-[18px] shrink-0">check</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+        </>
+    );
+};
+
+// ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
 export const AssignedTasksList = () => {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<ApiAssignedTask[]>([]);
-  const [statuses, setStatuses] = useState<Status[]>([]);
+  const [statuses, setStatuses] = useState<ApiStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Estados de Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("Todos");
+  const [dateOrder, setDateOrder] = useState<"desc" | "asc">("desc"); 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
+      const token = localStorage.getItem('token');
+      const headers = { "Authorization": `Bearer ${token}` };
+
       try {
-        const token = localStorage.getItem('token');
-        const headers = { "Authorization": `Bearer ${token}` };
+          const tasksRes = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers });
+          if (tasksRes.ok) {
+              const data = await tasksRes.json();
+              setTasks(Array.isArray(data) ? data : []); 
+          }
+      } catch (error) { console.error("Error cargando tareas:", error); }
 
-        const [tasksRes, statusData] = await Promise.all([
-            fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers }),
-            getStatuses()
-        ]);
+      let validStatuses: ApiStatus[] = [];
+      try {
+          const statusRes = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/status", { headers });
+          if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              validStatuses = Array.isArray(statusData) ? statusData : (statusData?.data || statusData?.result || []);
+          }
+      } catch (error) { console.error("Error cargando estatus:", error); }
 
-        if (tasksRes.ok) {
-            const data = await tasksRes.json();
-            setTasks(data.reverse()); 
-        }
-        setStatuses(Array.isArray(statusData) ? statusData : []);
-      } catch (error) {
-        console.error("Error cargando tareas:", error);
-      } finally {
-        setIsLoading(false);
+      if (!Array.isArray(validStatuses) || validStatuses.length === 0) {
+          validStatuses = [
+              { iIdStatus: 1, sStatus: "Pendiente" }, { iIdStatus: 2, sStatus: "Abierto" },
+              { iIdStatus: 3, sStatus: "En Proceso" }, { iIdStatus: 4, sStatus: "Completada" },
+              { iIdStatus: 5, sStatus: "Solucionado" }, { iIdStatus: 6, sStatus: "Cancelada" }
+          ];
       }
+
+      setStatuses(validStatuses);
+      setIsLoading(false);
     };
+    
     loadData();
   }, []);
 
-  // Lógica de filtrado en tiempo real mejorada
   const filteredTasks = useMemo(() => {
-      return tasks.filter(task => {
+      let filtered = tasks.filter(task => {
           const searchLower = searchTerm.toLowerCase();
           const taskTitle = task.sName?.toLowerCase() || "";
           const taskDesc = task.sDescription?.toLowerCase() || "";
           const taskType = task.taskTypeName?.toLowerCase() || "";
           const creator = task.userCreateName?.toLowerCase() || "";
           
-          const matchesSearch = 
-            taskTitle.includes(searchLower) || 
-            taskDesc.includes(searchLower) || 
-            taskType.includes(searchLower) || 
-            creator.includes(searchLower) ||
-            task.iIdTask.toString().includes(searchLower);
-          
+          const matchesSearch = taskTitle.includes(searchLower) || taskDesc.includes(searchLower) || taskType.includes(searchLower) || creator.includes(searchLower) || task.iIdTask.toString().includes(searchLower);
           const statusText = statuses.find(s => s.iIdStatus === task.iIdStatus)?.sStatus || "Desconocido";
           const matchesStatus = selectedStatus === "Todos" || statusText === selectedStatus;
 
           return matchesSearch && matchesStatus;
       });
-  }, [tasks, searchTerm, selectedStatus, statuses]);
 
-  // Paginación
+      filtered.sort((a, b) => {
+          const dateA = new Date(a.dDateUserCreate || a.dTaskStartDate || 0).getTime();
+          const dateB = new Date(b.dDateUserCreate || b.dTaskStartDate || 0).getTime();
+          return dateOrder === "desc" ? dateB - dateA : dateA - dateB;
+      });
+
+      return filtered;
+  }, [tasks, searchTerm, selectedStatus, statuses, dateOrder]);
+
   const totalPages = Math.ceil(filteredTasks.length / itemsPerPage) || 1;
   const currentTasks = filteredTasks.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedStatus]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedStatus, dateOrder]);
 
   const getStatusConfig = (id: number) => {
     const statusObj = statuses.find(s => s.iIdStatus === id);
@@ -110,12 +231,19 @@ export const AssignedTasksList = () => {
         case 4: className = "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"; variant = "success"; break;
         case 5: className = "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800"; variant = "success"; break;
         case 6: className = "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800"; variant = "danger"; break;
-        default: className = "bg-slate-100 text-slate-600 border-slate-200";
+        default: className = "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400";
     }
     return { label, className, variant: variant as any };
   };
 
-  const formatApiDate = (d: string | null) => d ? new Date(d).toLocaleDateString("es-MX") : "-";
+  const formatApiDate = (d: string | null) => d ? new Date(d).toLocaleDateString("es-MX", { day: '2-digit', month: 'short', year: 'numeric' }) : "-";
+
+  const statusOptions = statuses
+    .filter(s => s && s.iIdStatus !== 5 && s.sStatus && !s.sStatus.toLowerCase().includes("solucionado"))
+    .map(s => s.sStatus)
+    .filter(Boolean);
+
+  const hasActiveFilters = searchTerm !== "" || selectedStatus !== "Todos" || dateOrder !== "asc";
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }} className="flex flex-col gap-8 w-full max-w-[1600px] mx-auto pb-12 font-display text-slate-900 dark:text-white">
@@ -126,35 +254,73 @@ export const AssignedTasksList = () => {
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => navigate(-1)} className="w-12 h-12 rounded-full bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors shadow-sm group">
               <span className="material-symbols-rounded text-2xl group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
             </motion.button>
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => navigate('/my-tasks/new')} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all">
-                <span className="material-symbols-rounded text-xl">add_task</span> Nueva Tarea
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => navigate('/my-tasks/new')} className="px-5 sm:px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-[13px] sm:text-sm font-bold rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all">
+                <span className="material-symbols-rounded text-[18px] sm:text-xl">add_task</span> Nueva Tarea
             </motion.button>
         </div>
         <div>
-            <h1 className="text-4xl font-bold tracking-tight">Tareas Asignadas a Mí</h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg">Responsabilidades que otros te han delegado.</p>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Tareas Asignadas a Mí</h1>
+            <p className="text-slate-500 dark:text-slate-400 mt-2 text-base sm:text-lg">Responsabilidades que otros te han delegado.</p>
         </div>
       </div>
 
-      <Card className="flex flex-col shadow-2xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 p-0 overflow-hidden rounded-[30px]">
+      <Card className="flex flex-col shadow-2xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 p-0 overflow-hidden rounded-[24px]">
           
           {/* BARRA DE FILTROS */}
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col xl:flex-row gap-4 justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
-              <div className="w-full xl:w-96 relative group">
+          <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col xl:flex-row gap-4 justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
+              
+              {/* Buscador */}
+              <div className="w-full xl:w-96 relative group shrink-0">
                   <span className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors text-xl">search</span>
-                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar por título, descripción o ID..." className="w-full pl-12 pr-4 py-3 bg-white dark:bg-[#0f172a]/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all" />
+                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar tarea..." className="w-full pl-12 pr-4 py-3 bg-white dark:bg-[#0f172a]/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all placeholder:font-normal placeholder:text-slate-400" />
               </div>
-              <div className="flex flex-wrap gap-3 w-full xl:w-auto justify-end items-center">
-                  <div className="relative group">
-                    <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="appearance-none pl-4 pr-10 py-3 bg-white dark:bg-[#0f172a]/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500/50 outline-none hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer min-w-[160px]">
-                        <option value="Todos">Estatus: Todos</option>
-                        {statuses.map(s => <option key={s.iIdStatus} value={s.sStatus}>{s.sStatus}</option>)}
-                    </select>
-                    <span className="material-symbols-rounded absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-lg">filter_list</span>
-                  </div>
-                  <motion.button onClick={() => { setSearchTerm(""); setSelectedStatus("Todos"); }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-11 h-11 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 transition-colors" title="Reiniciar filtros">
-                      <span className="material-symbols-rounded text-xl">restart_alt</span>
+              
+              {/* Controles: Ordenamiento, Estatus, Limpiar */}
+              <div className="flex flex-row w-full xl:w-auto gap-2 sm:gap-3 items-center justify-end">
+                  
+                  {/* Botón de Ordenamiento Dinámico */}
+                  <motion.button 
+                      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                      onClick={() => setDateOrder(dateOrder === "desc" ? "asc" : "desc")}
+                      className="flex-1 xl:flex-none flex items-center justify-center gap-1.5 sm:gap-2 h-11 px-3 sm:px-5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-full text-[13px] sm:text-sm font-bold text-slate-600 dark:text-slate-300 transition-all shadow-sm whitespace-nowrap overflow-hidden"
+                  >
+                      <span className={`material-symbols-rounded text-[18px] sm:text-[20px] transition-transform duration-300 shrink-0 ${dateOrder === "desc" ? "text-blue-500" : "text-slate-400 rotate-180"}`}>
+                          sort
+                      </span>
+                      <span className="truncate">{dateOrder === "desc" ? "Recientes" : "Antiguos"}</span>
                   </motion.button>
+
+                  {/* Selector de Estatus */}
+                  <div className="flex-1 xl:flex-none relative z-50 min-w-[120px] max-w-[160px] sm:max-w-none">
+                      <CustomDropdown 
+                          value={selectedStatus} 
+                          onChange={setSelectedStatus} 
+                          options={statusOptions} 
+                          placeholder="Estatus" 
+                      />
+                  </div>
+                  
+                  {/* Contenedor Fijo para evitar el salto de layout (Layout Shift) */}
+                  <div className="w-11 h-11 shrink-0 relative">
+                      <AnimatePresence>
+                          {hasActiveFilters && (
+                              <motion.button 
+                                  initial={{ opacity: 0, scale: 0.5, rotate: -90 }} 
+                                  animate={{ opacity: 1, scale: 1, rotate: 0 }} 
+                                  exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
+                                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                  onClick={() => { setSearchTerm(""); setSelectedStatus("Todos"); setDateOrder("desc"); }} 
+                                  whileHover={{ scale: 1.1, rotate: 180 }} 
+                                  whileTap={{ scale: 0.9 }} 
+                                  className="absolute inset-0 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-full border border-rose-200 dark:border-rose-500/30 text-rose-500 dark:text-rose-400 transition-colors shadow-sm" 
+                                  title="Limpiar filtros"
+                              >
+                                  <span className="material-symbols-rounded text-[20px]">filter_alt_off</span>
+                              </motion.button>
+                          )}
+                      </AnimatePresence>
+                  </div>
+
               </div>
           </div>
 
@@ -162,8 +328,8 @@ export const AssignedTasksList = () => {
           <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse whitespace-nowrap">
                   <thead>
-                      <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-500 font-bold bg-slate-50/50 dark:bg-slate-900/30">
-                          <th className="px-8 py-5">#ID</th>
+                      <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-bold bg-slate-50/50 dark:bg-slate-900/30">
+                          <th className="px-8 py-5 pl-8">#ID</th>
                           <th className="px-6 py-5">Título / Descripción</th>
                           <th className="px-6 py-5">Tipo</th>
                           <th className="px-6 py-5">Estatus</th>
@@ -172,66 +338,126 @@ export const AssignedTasksList = () => {
                       </tr>
                   </thead>
                   <tbody className="text-sm">
-                      {isLoading ? (
-                          [...Array(5)].map((_, i) => (
-                              <tr key={i} className="border-b border-slate-100 dark:border-slate-800/50">
-                                  <td className="px-8 py-5"><Skeleton className="h-4 w-8 rounded" /></td>
-                                  <td className="px-6 py-5"><Skeleton className="h-4 w-48 rounded" /></td>
-                                  <td className="px-6 py-5"><Skeleton className="h-6 w-24 rounded-md" /></td>
-                                  <td className="px-6 py-5"><Skeleton className="h-6 w-20 rounded-full" /></td>
-                                  <td className="px-6 py-5"><Skeleton className="h-4 w-24 rounded" /></td>
-                                  <td className="px-6 py-5"><Skeleton className="h-8 w-8 rounded-full" /></td>
-                              </tr>
-                          ))
-                      ) : currentTasks.length === 0 ? (
-                          <tr><td colSpan={6} className="px-8 py-20 text-center text-slate-500"><span className="material-symbols-rounded text-5xl opacity-50 mb-2 block">inbox</span>No se encontraron tareas con estos filtros.</td></tr>
-                      ) : (
-                          currentTasks.map((task) => {
-                              const config = getStatusConfig(task.iIdStatus);
-                              return (
-                                <tr key={task.iIdTask} onClick={() => navigate(`/my-tasks/${task.iIdTask}`)} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/50 last:border-0 group cursor-pointer">
-                                    <td className="px-8 py-5 text-slate-500 font-mono text-xs group-hover:text-blue-500 transition-colors">#{task.iIdTask}</td>
-                                    
-                                    {/* RENDERIZADO MEJORADO CON TÍTULO Y DESCRIPCIÓN CORREGIDO */}
-                                    <td className="px-6 py-5">
-                                        <div className="flex flex-col">
-                                            <p className="font-bold text-slate-800 dark:text-white truncate max-w-[350px]">
-                                                {task.sName ? task.sName : <span className="text-slate-400 dark:text-slate-600 font-normal italic text-xs">Sin Título</span>}
-                                            </p>
-                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[350px] font-medium uppercase tracking-tight">
-                                                {task.sDescription}
-                                            </p>
-                                        </div>
-                                    </td>
+                      <AnimatePresence mode="popLayout">
+                          {isLoading ? (
+                              [...Array(5)].map((_, i) => (
+                                  <motion.tr key={`skel-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="border-b border-slate-100 dark:border-slate-800/50">
+                                      <td className="px-8 py-5 pl-8"><Skeleton className="h-4 w-8 rounded" /></td>
+                                      <td className="px-6 py-5">
+                                          <div className="flex flex-col gap-2">
+                                              <Skeleton className="h-4 w-48 rounded" />
+                                              <Skeleton className="h-3 w-32 rounded" />
+                                          </div>
+                                      </td>
+                                      <td className="px-6 py-5"><Skeleton className="h-6 w-24 rounded-md" /></td>
+                                      <td className="px-6 py-5"><Skeleton className="h-6 w-20 rounded-full" /></td>
+                                      <td className="px-6 py-5"><Skeleton className="h-4 w-24 rounded" /></td>
+                                      <td className="px-6 py-5">
+                                          <div className="flex items-center gap-3">
+                                              <Skeleton className="h-8 w-8 rounded-full" />
+                                              <Skeleton className="h-4 w-20 rounded hidden xl:block" />
+                                          </div>
+                                      </td>
+                                  </motion.tr>
+                              ))
+                          ) : currentTasks.length === 0 ? (
+                              <motion.tr key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                                  <td colSpan={6} className="px-8 py-20 text-center text-slate-500">
+                                      <div className="flex flex-col items-center gap-4 opacity-50">
+                                          <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full">
+                                              <span className="material-symbols-rounded text-4xl">inbox</span>
+                                          </div>
+                                          <p className="font-medium text-slate-500">No se encontraron tareas con estos filtros.</p>
+                                      </div>
+                                  </td>
+                              </motion.tr>
+                          ) : (
+                              currentTasks.map((task) => {
+                                  const config = getStatusConfig(task.iIdStatus);
+                                  return (
+                                    <motion.tr 
+                                        key={task.iIdTask} 
+                                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+                                        onClick={() => navigate(`/my-tasks/${task.iIdTask}`)} 
+                                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/50 last:border-0 group cursor-pointer"
+                                    >
+                                        <td className="px-8 py-5 pl-8 text-slate-400 font-bold text-xs group-hover:text-blue-500 transition-colors">#{task.iIdTask}</td>
+                                        
+                                        <td className="px-6 py-5">
+                                            <div className="flex flex-col justify-center">
+                                                <span className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate max-w-[300px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                                    {task.sName || task.sDescription}
+                                                </span>
+                                                {task.sName && <span className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-medium truncate max-w-[300px] mt-0.5 tracking-tight">{task.sDescription}</span>}
+                                            </div>
+                                        </td>
 
-                                    <td className="px-6 py-5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">{task.taskTypeName}</span></td>
-                                    <td className="px-6 py-5"><Badge variant={config.variant} className={`${config.className} border uppercase text-[10px] tracking-wide font-bold`}>{config.label}</Badge></td>
-                                    <td className="px-6 py-5 text-slate-500 text-xs font-mono">{formatApiDate(task.dDateUserCreate || task.dTaskStartDate)}</td>
-                                    <td className="px-6 py-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarGradient(task.iIdTask)} text-white flex items-center justify-center text-[10px] font-bold shadow-sm`}>{getInitials(task.userCreateName)}</div>
-                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 hidden xl:block">{task.userCreateName}</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                              );
-                          })
-                      )}
+                                        <td className="px-6 py-5"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700">{task.taskTypeName}</span></td>
+                                        <td className="px-6 py-5"><Badge variant={config.variant} className={`${config.className} border uppercase text-[10px] tracking-wide font-bold`}>{config.label}</Badge></td>
+                                        <td className="px-6 py-5 text-slate-500 font-medium text-xs">{formatApiDate(task.dDateUserCreate || task.dTaskStartDate)}</td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarGradient(task.iIdTask)} text-white flex items-center justify-center text-[10px] font-bold shadow-sm`}>{getInitials(task.userCreateName)}</div>
+                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 hidden xl:block">{task.userCreateName}</span>
+                                            </div>
+                                        </td>
+                                    </motion.tr>
+                                  );
+                              })
+                          )}
+                      </AnimatePresence>
                   </tbody>
               </table>
           </div>
 
-          <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#1e293b] rounded-b-[30px] flex justify-between items-center">
-               <span className="text-xs font-medium text-slate-500">Página {currentPage} de {totalPages}</span>
-               <div className="flex gap-2">
-                   <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50">
-                       <span className="material-symbols-rounded text-lg">chevron_left</span>
-                   </button>
-                   <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages || totalPages === 0} className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50">
-                       <span className="material-symbols-rounded text-lg">chevron_right</span>
-                   </button>
-               </div>
-          </div>
+          {/* PAGINACIÓN */}
+          {!isLoading && filteredTasks.length > 0 && (
+            <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 bg-transparent">
+              <div className="flex items-center gap-1 text-xs text-slate-500 font-medium">
+                <span>
+                  {filteredTasks.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}–{Math.min(currentPage * itemsPerPage, filteredTasks.length)} de{" "}
+                  <b className="text-slate-800 dark:text-slate-200">{filteredTasks.length}</b> tareas
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
+                >
+                  <span className="material-symbols-rounded text-[20px]">chevron_left</span>
+                </motion.button>
+
+                <div className="flex items-center gap-1 hidden sm:flex">
+                  {[...Array(totalPages)].map((_, idx) => {
+                    const page = idx + 1;
+                    if (totalPages > 5 && Math.abs(page - currentPage) > 2 && page !== 1 && page !== totalPages) return null;
+                    return (
+                      <motion.button
+                        key={page}
+                        whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-full text-xs font-bold transition-all ${currentPage === page ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                      >
+                        {page}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
+                >
+                  <span className="material-symbols-rounded text-[20px]">chevron_right</span>
+                </motion.button>
+              </div>
+            </div>
+          )}
       </Card>
     </motion.div>
   );

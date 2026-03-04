@@ -5,7 +5,7 @@ import { Login } from "./pages/Login";
 // Páginas
 import { Dashboard } from "./pages/Dashboard";
 import { Users } from "./pages/Users";
-import { CreateUser } from "./pages/CreateUser"; // <-- IMPORTACIÓN NUEVA
+import { CreateUser } from "./pages/CreateUser";
 import { Tickets } from "./pages/Tickets";
 import { TicketDetail } from "./pages/TicketDetail";
 import { CreateTicket } from "./pages/CreateTicket";
@@ -18,6 +18,27 @@ import { PersonalTasksList } from "./pages/PersonalTasksList";
 
 // Seguridad
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+
+// --- ENRUTADOR INTELIGENTE RAÍZ (TRAFFIC CONTROLLER) ---
+// Decide qué pantalla inicial cargar según los permisos del usuario
+const SmartHome = () => {
+  const userString = localStorage.getItem("user");
+  let isPrivileged = false;
+  
+  if (userString) {
+    try {
+      const user = JSON.parse(userString);
+      const userRoleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
+      // Solo el ID 32 (Soporte TI) tiene acceso al Dashboard General de Tickets
+      isPrivileged = [32].includes(userRoleId);
+    } catch (e) {
+      console.error("Error leyendo usuario para enrutamiento", e);
+    }
+  }
+
+  // Si es Soporte muestra el Dashboard principal, si no, lo redirige a sus tareas
+  return isPrivileged ? <Dashboard /> : <Navigate to="/my-tasks" replace />;
+};
 
 export const router = createBrowserRouter([
   // 1. RUTA PÚBLICA
@@ -35,20 +56,21 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           
-          // A) ZONA EXCLUSIVA (SOLO ADMINS/SOPORTE)
-          // Aquí dejamos solo lo que un empleado normal NO debe ver (Dashboard general, Usuarios, Reportes)
+          // --- RUTA DE INICIO DINÁMICA ---
+          { index: true, element: <SmartHome /> },
+
+          // A) ZONA EXCLUSIVA (ADMINS / SOPORTE / DIRECCION GENERAL)
+          // Aquí están las vistas de administración extra que ellos sí pueden ver
           {
             element: <ProtectedRoute allowedRoles={["SOPORTE", "DIRECCION GENERAL"]} />,
             children: [
-              { index: true, element: <Dashboard /> }, 
               { path: "users", element: <Users /> },
-              { path: "users/new", element: <CreateUser /> }, // <-- RUTA NUEVA AGREGADA
+              { path: "users/new", element: <CreateUser /> },
               { path: "reports", element: <div className="p-10 text-slate-400">🚧 Reportes</div> },
             ]
           },
 
           // B) ZONA COMÚN (PARA TODOS LOS LOGUEADOS)
-          // Aquí movimos los TICKETS para que Berna y Ana puedan entrar
           {
             children: [
               // --- SECCIÓN TICKETS (ACCESIBLE PARA TODOS) ---

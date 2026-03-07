@@ -17,6 +17,7 @@ interface ApiUser {
   departmentName: string;
   branchName: string;
   roleName: string;
+  dDateUserCreate?: string;
 }
 
 interface ApiDepartment {
@@ -45,21 +46,21 @@ const getAvatarGradient = (id: number) => {
 
 // --- Helpers de Iconos ---
 const getRoleIcon = (role: string) => {
-    const r = role.toLowerCase();
-    if (r.includes("admin")) return "admin_panel_settings";
-    if (r.includes("coordinador") || r.includes("gerente")) return "manage_accounts";
-    if (r.includes("sistemas") || r.includes("soporte")) return "computer";
-    if (r.includes("vendedor") || r.includes("cajero")) return "point_of_sale";
-    return "badge";
+  const r = role.toLowerCase();
+  if (r.includes("admin")) return "admin_panel_settings";
+  if (r.includes("coordinador") || r.includes("gerente")) return "manage_accounts";
+  if (r.includes("sistemas") || r.includes("soporte")) return "computer";
+  if (r.includes("vendedor") || r.includes("cajero")) return "point_of_sale";
+  return "badge";
 };
 
 const getDeptIcon = (dept: string) => {
-    const d = dept.toLowerCase();
-    if (d.includes("sistemas")) return "devices";
-    if (d.includes("operaciones")) return "precision_manufacturing";
-    if (d.includes("hr") || d.includes("recursos")) return "groups";
-    if (d.includes("ventas")) return "storefront";
-    return "domain";
+  const d = dept.toLowerCase();
+  if (d.includes("sistemas")) return "devices";
+  if (d.includes("operaciones")) return "precision_manufacturing";
+  if (d.includes("hr") || d.includes("recursos")) return "groups";
+  if (d.includes("ventas")) return "storefront";
+  return "domain";
 };
 
 // ─── Utilidad para calcular posición del portal ───
@@ -88,46 +89,45 @@ const CustomSelect = ({ value, onChange, options, placeholder, icon }: any) => {
       if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node))
         setIsOpen(false);
     };
-    const handleScroll = () => { if(isOpen) updatePos(); };
+    const handleScroll = () => { if (isOpen) updatePos(); };
 
     document.addEventListener("mousedown", handleOutside);
-    window.addEventListener("scroll", handleScroll, true); 
+    window.addEventListener("scroll", handleScroll, true);
     window.addEventListener("resize", updatePos);
-    
-    return () => { 
-        document.removeEventListener("mousedown", handleOutside); 
-        window.removeEventListener("scroll", handleScroll, true); 
-        window.removeEventListener("resize", updatePos);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", updatePos);
     };
   }, [isOpen, updatePos]);
 
   return (
     <>
-      <motion.button 
-        ref={triggerRef} 
+      <motion.button
+        ref={triggerRef}
         type="button"
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); updatePos(); setIsOpen(!isOpen); }}
-        className={`relative w-full h-[60px] flex items-center justify-between pl-[52px] pr-4 bg-slate-50 dark:bg-[#0f172a] border rounded-[20px] cursor-pointer transition-all duration-300 select-none shadow-inner group ${
-          isOpen ? "bg-white dark:bg-[#131c2f] border-blue-500 ring-4 ring-blue-500/15" : "border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
-        }`}>
-        
+        className={`relative w-full h-[60px] flex items-center justify-between pl-[52px] pr-4 bg-slate-50 dark:bg-[#0f172a] border rounded-[20px] cursor-pointer transition-all duration-300 select-none shadow-inner group ${isOpen ? "bg-white dark:bg-[#131c2f] border-blue-500 ring-4 ring-blue-500/15" : "border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
+          }`}>
+
         {/* ICONO */}
         {selectedOption && selectedOption.icon ? (
-           <span className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 z-20 text-blue-600 dark:text-blue-500 text-[22px] transition-colors">{selectedOption.icon}</span>
+          <span className="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 z-20 text-blue-600 dark:text-blue-500 text-[22px] transition-colors">{selectedOption.icon}</span>
         ) : (
-           <span className={`material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 z-20 transition-colors text-[22px] ${isOpen || value !== "all" ? "text-blue-600 dark:text-blue-500" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-blue-400"}`}>{icon}</span>
+          <span className={`material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 z-20 transition-colors text-[22px] ${isOpen || value !== "all" ? "text-blue-600 dark:text-blue-500" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-blue-400"}`}>{icon}</span>
         )}
 
         {/* ETIQUETA Y VALOR */}
         <div className="flex flex-col items-start justify-center h-full w-full relative">
-            <span className={`absolute left-0 transition-all duration-200 pointer-events-none z-20 font-bold uppercase tracking-wider text-[10px] ${isOpen ? 'text-blue-600 dark:text-blue-500' : 'text-slate-500 dark:text-slate-400'} top-[6px]`}>
-                {placeholder}
-            </span>
-            <span className="text-[15px] font-medium truncate transition-opacity duration-200 mt-3 text-slate-800 dark:text-white">
-              {selectedOption ? selectedOption.label : ''}
-            </span>
+          <span className={`absolute left-0 transition-all duration-200 pointer-events-none z-20 font-bold uppercase tracking-wider text-[10px] ${isOpen ? 'text-blue-600 dark:text-blue-500' : 'text-slate-500 dark:text-slate-400'} top-[6px]`}>
+            {placeholder}
+          </span>
+          <span className="text-[15px] font-medium truncate transition-opacity duration-200 mt-3 text-slate-800 dark:text-white">
+            {selectedOption ? selectedOption.label : ''}
+          </span>
         </div>
-        
+
         <span className={`material-symbols-rounded text-[20px] shrink-0 transition-all duration-500 ${isOpen ? "rotate-180 text-blue-600 dark:text-blue-500" : "text-slate-400 dark:text-slate-500"}`}>expand_more</span>
       </motion.button>
 
@@ -140,19 +140,18 @@ const CustomSelect = ({ value, onChange, options, placeholder, icon }: any) => {
               {options.length === 0
                 ? <li className="px-4 py-4 text-sm text-slate-500 text-center font-medium">No hay opciones</li>
                 : options.map((opt: any) => {
-                    const isSelected = value === opt.value;
-                    return (
-                      <li key={opt.value} onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                        className={`px-4 py-3.5 text-[14px] cursor-pointer rounded-xl transition-colors duration-200 flex items-center gap-3 font-bold group ${
-                          isSelected ? "bg-blue-50 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 shadow-inner" : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0f172a] border border-transparent"
+                  const isSelected = value === opt.value;
+                  return (
+                    <li key={opt.value} onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                      className={`px-4 py-3.5 text-[14px] cursor-pointer rounded-xl transition-colors duration-200 flex items-center gap-3 font-bold group ${isSelected ? "bg-blue-50 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 shadow-inner" : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#0f172a] border border-transparent"
                         }`}>
-                        <span className={`material-symbols-rounded text-[18px] transition-all duration-300 ${isSelected ? "opacity-100 text-blue-600 dark:text-blue-400 scale-110" : "opacity-0 scale-75"}`}>check</span>
-                        {opt.icon && <span className={`material-symbols-rounded text-[20px] transition-colors ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-400'}`}>{opt.icon}</span>}
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="truncate tracking-wide">{opt.label}</span>
-                        </div>
-                      </li>
-                    )
+                      <span className={`material-symbols-rounded text-[18px] transition-all duration-300 ${isSelected ? "opacity-100 text-blue-600 dark:text-blue-400 scale-110" : "opacity-0 scale-75"}`}>check</span>
+                      {opt.icon && <span className={`material-symbols-rounded text-[20px] transition-colors ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-400'}`}>{opt.icon}</span>}
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="truncate tracking-wide">{opt.label}</span>
+                      </div>
+                    </li>
+                  )
                 })}
             </ul>
           </motion.div>
@@ -197,7 +196,7 @@ export const Users = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedExportFormat, setSelectedExportFormat] = useState<"pdf" | "excel" | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // Filtros específicos para la exportación
   const [exportRoleFilter, setExportRoleFilter] = useState("all");
   const [exportDeptFilter, setExportDeptFilter] = useState("all");
@@ -289,16 +288,17 @@ export const Users = () => {
 
     setTimeout(() => {
       const dateStr = new Date().toISOString().split("T")[0];
-      
+
       if (selectedExportFormat === "excel") {
-        const headers = ["ID Empleado", "Nombre", "Usuario", "Rol", "Departamento", "Sucursal"];
+        const headers = ["ID Empleado", "Nombre", "Usuario", "Rol", "Departamento", "Sucursal", "Fecha de Creación"];
         const rows = usersToExport.map((u) => [
-          u.iIdEmployee, 
-          `"${u.employeeName || ''}"`, 
-          u.sUser || '', 
-          `"${u.roleName || ''}"`, 
-          `"${u.departmentName || ''}"`, 
+          u.iIdEmployee,
+          `"${u.employeeName || ''}"`,
+          u.sUser || '',
+          `"${u.roleName || ''}"`,
+          `"${u.departmentName || ''}"`,
           `"${u.branchName || ''}"`,
+          `"${u.dDateUserCreate ? new Date(u.dDateUserCreate).toLocaleDateString() : ''}"`,
         ]);
         const csvContent = [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
         const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -312,28 +312,29 @@ export const Users = () => {
 
       } else if (selectedExportFormat === "pdf") {
         const doc = new jsPDF();
-        
+
         doc.setFontSize(18);
         doc.text("Directorio de Usuarios - Compers", 14, 22);
         doc.setFontSize(11);
         doc.text(`Fecha de exportación: ${dateStr}`, 14, 30);
         doc.text(`Total de registros: ${usersToExport.length}`, 14, 36);
 
-        const tableColumn = ["ID", "Nombre", "Usuario", "Rol", "Departamento"];
+        const tableColumn = ["ID", "Nombre", "Usuario", "Rol", "Departamento", "Fecha Creación"];
         const tableRows = usersToExport.map(u => [
-            u.iIdEmployee,
-            u.employeeName,
-            u.sUser,
-            u.roleName,
-            u.departmentName
+          u.iIdEmployee,
+          u.employeeName,
+          u.sUser,
+          u.roleName,
+          u.departmentName,
+          u.dDateUserCreate ? new Date(u.dDateUserCreate).toLocaleDateString() : '—'
         ]);
 
         autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 45,
-            styles: { fontSize: 9, cellPadding: 3 },
-            headStyles: { fillColor: [37, 99, 235] }, // Azul
+          head: [tableColumn],
+          body: tableRows,
+          startY: 45,
+          styles: { fontSize: 9, cellPadding: 3 },
+          headStyles: { fillColor: [37, 99, 235] }, // Azul
         });
 
         doc.save(`Directorio_Usuarios_${dateStr}.pdf`);
@@ -401,7 +402,7 @@ export const Users = () => {
     show: {
       opacity: 1,
       transition: {
-        staggerChildren: 0.05, 
+        staggerChildren: 0.05,
       }
     }
   };
@@ -477,7 +478,7 @@ export const Users = () => {
 
         {/* Filtros + Reset */}
         <div className="flex gap-2 w-full lg:w-auto shrink-0">
-          
+
           {/* Filtro Rol - SE AÑADIÓ min-w-0 */}
           <div className="relative flex-1 min-w-0 lg:flex-none" ref={roleRef}>
             <motion.button
@@ -544,8 +545,8 @@ export const Users = () => {
           <AnimatePresence>
             {(searchTerm !== "" || selectedRole !== "all" || selectedDept !== "all") && (
               <motion.button
-                initial={{ opacity: 0, scale: 0.5, width: 0, marginLeft: 0 }} 
-                animate={{ opacity: 1, scale: 1, width: 48, marginLeft: 8 }} 
+                initial={{ opacity: 0, scale: 0.5, width: 0, marginLeft: 0 }}
+                animate={{ opacity: 1, scale: 1, width: 48, marginLeft: 8 }}
                 exit={{ opacity: 0, scale: 0.5, width: 0, marginLeft: 0 }}
                 transition={{ type: "spring", stiffness: 300, damping: 25 }}
                 onClick={() => { setSearchTerm(""); setSelectedRole("all"); setSelectedDept("all"); }}
@@ -563,42 +564,44 @@ export const Users = () => {
       {/* TABLA CON STAGGER DIRECTO (EFECTO CASCADA SEGURO) */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}>
         <Card className="overflow-hidden shadow-xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 rounded-[24px] p-0">
-          <div className="overflow-x-auto min-h-[400px]">
+          <div className="overflow-x-auto min-h-[640px] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold bg-slate-50/50 dark:bg-[#0f172a]/30">
-                  <th className="px-8 py-5">Empleado</th>
-                  <th className="px-6 py-5">Usuario</th>
-                  <th className="px-6 py-5">Rol</th>
-                  <th className="px-6 py-5">Departamento</th>
-                  <th className="px-6 py-5">Sucursal</th>
-                  <th className="px-8 py-5 text-right print:hidden">Acciones</th>
+                  <th className="px-8 py-5 min-w-[260px]">Empleado</th>
+                  <th className="px-6 py-5 min-w-[120px]">Usuario</th>
+                  <th className="px-6 py-5 min-w-[190px]">Rol</th>
+                  <th className="px-6 py-5 min-w-[160px]">Departamento</th>
+                  <th className="px-6 py-5 min-w-[120px]">Sucursal</th>
+                  <th className="px-6 py-5 min-w-[150px]">Fecha Creación</th>
+                  <th className="px-8 py-5 text-right min-w-[100px] print:hidden">Acciones</th>
                 </tr>
               </thead>
-              
+
               <tbody className="text-sm bg-white dark:bg-[#1e293b]">
-                <AnimatePresence mode="popLayout">
+                <AnimatePresence mode="wait">
                   {isLoading ? (
-                    [...Array(5)].map((_, index) => (
-                      <motion.tr 
-                        key={`skel-${index}`} 
-                        initial={{ opacity: 0, y: 15 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        exit={{ opacity: 0 }} 
+                    [...Array(itemsPerPage)].map((_, index) => (
+                      <motion.tr
+                        key={`skel-${index}`}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, transition: { duration: 0.15 } }}
                         transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
                         className="border-b border-slate-100 dark:border-slate-800/50"
                       >
-                        <td className="px-8 py-6"><div className="flex items-center gap-3"><Skeleton className="w-10 h-10 rounded-full" /><Skeleton className="h-4 w-36 rounded" /></div></td>
-                        <td className="px-6 py-6"><Skeleton className="h-4 w-24 rounded" /></td>
-                        <td className="px-6 py-6"><Skeleton className="h-6 w-20 rounded-full" /></td>
-                        <td className="px-6 py-6"><Skeleton className="h-4 w-28 rounded" /></td>
-                        <td className="px-6 py-6"><Skeleton className="h-4 w-24 rounded" /></td>
-                        <td className="px-8 py-6"><Skeleton className="h-8 w-8 rounded-xl ml-auto" /></td>
+                        <td className="px-8 py-5"><div className="flex items-center gap-3"><Skeleton className="w-10 h-10 rounded-full" /><Skeleton className="h-4 w-36 rounded" /></div></td>
+                        <td className="px-6 py-5"><Skeleton className="h-4 w-24 rounded" /></td>
+                        <td className="px-6 py-5"><Skeleton className="h-6 w-20 rounded-full" /></td>
+                        <td className="px-6 py-5"><Skeleton className="h-4 w-28 rounded" /></td>
+                        <td className="px-6 py-5"><Skeleton className="h-4 w-24 rounded" /></td>
+                        <td className="px-6 py-5"><Skeleton className="h-4 w-24 rounded" /></td>
+                        <td className="px-8 py-5"><Skeleton className="h-8 w-8 rounded-xl ml-auto" /></td>
                       </motion.tr>
                     ))
                   ) : paginatedUsers.length === 0 ? (
-                    <motion.tr key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                      <td colSpan={6} className="px-6 py-24 text-center">
+                    <motion.tr key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.15 } }} transition={{ duration: 0.2 }}>
+                      <td colSpan={7} className="px-6 py-24 text-center">
                         <div className="flex flex-col items-center gap-4 opacity-50">
                           <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full">
                             <span className="material-symbols-rounded text-4xl">person_search</span>
@@ -610,11 +613,10 @@ export const Users = () => {
                   ) : (
                     paginatedUsers.map((user, index) => (
                       <motion.tr
-                        layout="position"
                         key={user.iIdUser}
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
+                        exit={{ opacity: 0, transition: { duration: 0.15 } }}
                         transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
                         className="group border-b border-slate-100 dark:border-slate-800/60 last:border-0 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors duration-200"
                       >
@@ -662,6 +664,14 @@ export const Users = () => {
                           </span>
                         </td>
 
+                        {/* Fecha Creación */}
+                        <td className="px-6 py-5">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <span className="material-symbols-rounded text-sm text-slate-400">calendar_today</span>
+                            {user.dDateUserCreate ? new Date(user.dDateUserCreate).toLocaleDateString() : "—"}
+                          </span>
+                        </td>
+
                         {/* Acciones */}
                         <td className="px-8 py-5 text-right print:hidden">
                           <motion.button
@@ -681,54 +691,56 @@ export const Users = () => {
             </table>
           </div>
 
-          {/* PAGINACIÓN */}
-          {!isLoading && filteredUsers.length > 0 && (
-            <div className="p-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-transparent">
-              <div className="flex items-center gap-1 text-xs text-slate-500 font-medium">
-                <span>
-                  {filteredUsers.length > 0 ? startIndex + 1 : 0}–{Math.min(startIndex + itemsPerPage, filteredUsers.length)} de{" "}
-                  <b className="text-slate-800 dark:text-slate-200">{filteredUsers.length}</b> usuarios
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <motion.button
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
-                >
-                  <span className="material-symbols-rounded text-[20px]">chevron_left</span>
-                </motion.button>
-
-                <div className="flex items-center gap-1">
-                  {[...Array(totalPages)].map((_, idx) => {
-                    const page = idx + 1;
-                    if (totalPages > 5 && Math.abs(page - currentPage) > 2 && page !== 1 && page !== totalPages) return null;
-                    return (
-                      <motion.button
-                        key={page}
-                        whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                        onClick={() => setCurrentPage(page)}
-                        className={`w-9 h-9 flex items-center justify-center rounded-full text-xs font-bold transition-all ${currentPage === page ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
-                      >
-                        {page}
-                      </motion.button>
-                    );
-                  })}
+          {/* PAGINACIÓN ESTABLE */}
+          <div className={`min-h-[81px] p-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-transparent transition-opacity duration-300 ${isLoading ? "opacity-0 pointer-events-none" : "opacity-100"} ${!isLoading && filteredUsers.length === 0 ? "hidden" : ""}`}>
+            {!isLoading && filteredUsers.length > 0 && (
+              <>
+                <div className="flex items-center gap-1 text-xs text-slate-500 font-medium">
+                  <span>
+                    {filteredUsers.length > 0 ? startIndex + 1 : 0}–{Math.min(startIndex + itemsPerPage, filteredUsers.length)} de{" "}
+                    <b className="text-slate-800 dark:text-slate-200">{filteredUsers.length}</b> usuarios
+                  </span>
                 </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
-                >
-                  <span className="material-symbols-rounded text-[20px]">chevron_right</span>
-                </motion.button>
-              </div>
-            </div>
-          )}
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
+                  >
+                    <span className="material-symbols-rounded text-[20px]">chevron_left</span>
+                  </motion.button>
+
+                  <div className="flex items-center gap-1">
+                    {[...Array(totalPages)].map((_, idx) => {
+                      const page = idx + 1;
+                      if (totalPages > 5 && Math.abs(page - currentPage) > 2 && page !== 1 && page !== totalPages) return null;
+                      return (
+                        <motion.button
+                          key={page}
+                          whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                          onClick={() => setCurrentPage(page)}
+                          className={`w-9 h-9 flex items-center justify-center rounded-full text-xs font-bold transition-all ${currentPage === page ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
+                        >
+                          {page}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
+                  >
+                    <span className="material-symbols-rounded text-[20px]">chevron_right</span>
+                  </motion.button>
+                </div>
+              </>
+            )}
+          </div>
         </Card>
       </motion.div>
 
@@ -762,29 +774,29 @@ export const Users = () => {
 
               {/* Filtros dentro del Modal (Con CustomSelect Premium) */}
               <div className="flex flex-col gap-4 sm:gap-5 mb-6 sm:mb-8 shrink-0">
-                  <div className="relative z-50">
-                      <CustomSelect 
-                          value={exportRoleFilter} 
-                          onChange={(val: string) => setExportRoleFilter(val)} 
-                          options={exportRolesList} 
-                          placeholder="Filtrar por Rol" 
-                          icon="admin_panel_settings" 
-                      />
-                  </div>
-                  <div className="relative z-40">
-                      <CustomSelect 
-                          value={exportDeptFilter} 
-                          onChange={(val: string) => setExportDeptFilter(val)} 
-                          options={exportDeptsList} 
-                          placeholder="Filtrar por Departamento" 
-                          icon="domain" 
-                      />
-                  </div>
+                <div className="relative z-50">
+                  <CustomSelect
+                    value={exportRoleFilter}
+                    onChange={(val: string) => setExportRoleFilter(val)}
+                    options={exportRolesList}
+                    placeholder="Filtrar por Rol"
+                    icon="admin_panel_settings"
+                  />
+                </div>
+                <div className="relative z-40">
+                  <CustomSelect
+                    value={exportDeptFilter}
+                    onChange={(val: string) => setExportDeptFilter(val)}
+                    options={exportDeptsList}
+                    placeholder="Filtrar por Departamento"
+                    icon="domain"
+                  />
+                </div>
 
-                  <div className="flex justify-between items-center px-2 pt-1 sm:pt-2">
-                      <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest">Total a exportar</span>
-                      <span className="text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">{usersToExport.length} usuarios</span>
-                  </div>
+                <div className="flex justify-between items-center px-2 pt-1 sm:pt-2">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest">Total a exportar</span>
+                  <span className="text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">{usersToExport.length} usuarios</span>
+                </div>
               </div>
 
               {/* Opciones de Formato */}

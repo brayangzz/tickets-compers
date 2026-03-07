@@ -78,16 +78,29 @@ export const Tickets = () => {
     ? "Administra, asigna y resuelve las incidencias de toda la organización."
     : "Consulta el estado y seguimiento de las solicitudes que has creado.";
 
-  // --- CARGA DE DATOS ---
+  // --- CARGA DE DATOS (OPTIMIZADA) ---
   useEffect(() => {
     const loadAllData = async () => {
       setIsLoading(true);
       try {
+        // Disparamos tickets de inmediato
+        const pTickets = getTickets();
+
+        // Helper de caché
+        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
+          const cached = sessionStorage.getItem(key);
+          if (cached) return JSON.parse(cached);
+          const data = await fetcher();
+          sessionStorage.setItem(key, JSON.stringify(data));
+          return data;
+        };
+
+        const pBranches = fetchCached('app_branches', () => getBranches());
+        const pDepts = fetchCached('app_departments', () => getDepartments());
+        const pStatuses = fetchCached('app_statuses', () => getStatuses());
+
         const [ticketsData, branchesData, deptsData, statusData] = await Promise.all([
-          getTickets(),
-          getBranches(),
-          getDepartments(),
-          getStatuses(),
+          pTickets, pBranches, pDepts, pStatuses
         ]);
 
         let allTickets = Array.isArray(ticketsData) ? ticketsData : [];
@@ -262,13 +275,13 @@ export const Tickets = () => {
                 >
                   <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll">
                     <button onClick={() => { setFilterStatus("all"); setIsStatusOpen(false); }} className={`px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${filterStatus === "all" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>Todos los estatus</button>
-                    
+
                     {statuses
-                      .filter((s) => s.iIdStatus !== 4) 
+                      .filter((s) => s.iIdStatus !== 4)
                       .map((s) => (
-                      <button key={s.iIdStatus} onClick={() => { setFilterStatus(s.iIdStatus.toString()); setIsStatusOpen(false); }} className={`px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${filterStatus === s.iIdStatus.toString() ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{s.sStatus}</button>
-                    ))}
-                    
+                        <button key={s.iIdStatus} onClick={() => { setFilterStatus(s.iIdStatus.toString()); setIsStatusOpen(false); }} className={`px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${filterStatus === s.iIdStatus.toString() ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{s.sStatus}</button>
+                      ))}
+
                   </div>
                 </motion.div>
               )}
@@ -294,7 +307,7 @@ export const Tickets = () => {
                   initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }} transition={{ duration: 0.2 }}
                   className="absolute right-0 mt-2 w-56 sm:w-64 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl overflow-hidden z-[100] p-2"
                 >
-                  <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll">  
+                  <div className="flex flex-col gap-1 max-h-60 overflow-y-auto comments-scroll">
                     <button onClick={() => { setFilterBranch("all"); setIsBranchOpen(false); }} className={`px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${filterBranch === "all" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>Todas las sucursales</button>
                     {branches.map((b) => (
                       <button key={b.iIdBranch} onClick={() => { setFilterBranch(b.iIdBranch.toString()); setIsBranchOpen(false); }} className={`px-4 py-2.5 rounded-xl text-left text-sm font-bold transition-all ${filterBranch === b.iIdBranch.toString() ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{b.sBranch}</button>

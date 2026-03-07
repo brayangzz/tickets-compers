@@ -568,14 +568,24 @@ export const CreateUser = () => {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
+        const fetchCached = async (key: string, url: string) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            const res = await fetch(url);
+            const data = await res.json();
+            sessionStorage.setItem(key, JSON.stringify(data));
+            return data;
+        };
+
         const [r, d, b] = await Promise.all([
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles"),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments"),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/branches")
+          fetchCached('app_roles', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles"),
+          fetchCached('app_departments', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments"),
+          fetchCached('app_branches', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/branches")
         ]);
-        setRolesList(await r.json());
-        setDeptsList(await d.json());
-        setBranchesList(await b.json());
+        
+        setRolesList(r);
+        setDeptsList(d);
+        setBranchesList(b);
       } catch {
         setStatusMessage({ type: 'error', text: 'Error de conexión con el servidor de catálogos.' });
       } finally {

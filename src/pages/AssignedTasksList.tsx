@@ -169,11 +169,17 @@ export const AssignedTasksList = () => {
 
       let validStatuses: ApiStatus[] = [];
       try {
-          const statusRes = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/status", { headers });
-          if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              validStatuses = Array.isArray(statusData) ? statusData : (statusData?.data || statusData?.result || []);
-          }
+          const fetchCached = async (key: string, url: string) => {
+              const cached = sessionStorage.getItem(key);
+              if (cached) return JSON.parse(cached);
+              const res = await fetch(url, { headers });
+              const data = await res.json();
+              sessionStorage.setItem(key, JSON.stringify(data));
+              return data;
+          };
+          
+          const statusData = await fetchCached('app_statuses', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/status");
+          validStatuses = Array.isArray(statusData) ? statusData : (statusData?.data || statusData?.result || []);
       } catch (error) { console.error("Error cargando estatus:", error); }
 
       if (!Array.isArray(validStatuses) || validStatuses.length === 0) {

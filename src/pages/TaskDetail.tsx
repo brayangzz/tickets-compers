@@ -95,12 +95,22 @@ export const TaskDetail = () => {
         const headers = { "Authorization": `Bearer ${token}` };
         const taskId = Number(id);
 
+        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            const data = await fetcher();
+            sessionStorage.setItem(key, JSON.stringify(data));
+            return data;
+        };
+
+        const pStatuses = fetchCached('app_statuses', () => getStatuses());
+
         const [assignedToMeRes, assignedByMeRes, personalData, filesRes, statusesData] = await Promise.all([
             fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers }),
             fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-by-me", { headers }),
             getPersonalTasks(),
             fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/task-files/${taskId}`, { headers }),
-            getStatuses()
+            pStatuses
         ]);
 
         const assignedToMe = assignedToMeRes.ok ? await assignedToMeRes.json() : [];

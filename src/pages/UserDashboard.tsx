@@ -65,10 +65,22 @@ export const UserDashboard = () => {
                 const token = localStorage.getItem('token');
                 const headers = { "Authorization": `Bearer ${token}` };
 
+                // Helper de caché para catálogos estáticos
+                const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
+                    const cached = sessionStorage.getItem(key);
+                    if (cached) return JSON.parse(cached);
+                    const data = await fetcher();
+                    sessionStorage.setItem(key, JSON.stringify(data));
+                    return data;
+                };
+
+                const pTypes = fetchCached('app_task_types', () => getTaskTypes());
+                const pStatuses = fetchCached('app_statuses', () => getStatuses());
+
                 const [tasksData, typesData, statusData, assignedRes, delegatedRes] = await Promise.all([
                     getPersonalTasks(),
-                    getTaskTypes(),
-                    getStatuses(),
+                    pTypes,
+                    pStatuses,
                     fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers }),
                     fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-by-me", { headers })
                 ]);

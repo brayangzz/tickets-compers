@@ -276,16 +276,26 @@ export const CreateTicket = () => {
         const token = localStorage.getItem('token');
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // Solicitamos los catálogos y el directorio completo de usuarios para buscar al actual
-        const [branchesData, deptsData, usersRes] = await Promise.all([
-          getBranches(), 
-          getDepartments(),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers })
+        // Helper de caché para catálogos y directorio
+        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            const data = await fetcher();
+            sessionStorage.setItem(key, JSON.stringify(data));
+            return data;
+        };
+
+        const [branchesData, deptsData, usersList] = await Promise.all([
+          fetchCached('app_branches', () => getBranches()), 
+          fetchCached('app_departments', () => getDepartments()),
+          fetchCached('app_users', async () => {
+              const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers });
+              return res.ok ? await res.json() : [];
+          })
         ]);
 
         const bList = branchesData || [];
         const dList = deptsData || [];
-        const usersList = usersRes.ok ? await usersRes.json() : [];
         
         setBranchesList(bList);
         setDepartmentsList(dList);

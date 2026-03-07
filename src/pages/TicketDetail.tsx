@@ -159,32 +159,54 @@ export const TicketDetail = () => {
       } catch (error) { console.error("Error al cargar comentarios", error); }
   };
 
-  // --- CARGA INICIAL ---
+  // --- CARGA INICIAL (OPTIMIZADA) ---
   useEffect(() => {
     const loadData = async () => {
       if (!id) return;
       setIsLoading(true);
       try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('token') || '';
         const headers = { 'Authorization': `Bearer ${token}` };
         const ticketId = Number(id);
 
-        const [ticketData, filesData, statusesData, usersRes, supportUsersRes] = await Promise.all([
-            getTicketById(ticketId),
-            getTicketFiles(ticketId),
-            getStatuses(),
-            fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers }),
-            fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/support-users", { headers }) 
+        // Disparamos peticiones nucleares
+        const pTicket = getTicketById(ticketId);
+        const pFiles = getTicketFiles(ticketId);
+        // Eliminamos el waterfall. Iniciamos la descarga de comentarios simultáneamente.
+        const pComments = fetchComments(ticketId); 
+
+        // Helper de Caché Temporal de la Sesión para los "Diccionarios" Gigantes
+        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            const data = await fetcher();
+            sessionStorage.setItem(key, JSON.stringify(data));
+            return data;
+        };
+
+        const pStatuses = fetchCached('app_statuses', () => getStatuses());
+        
+        const pUsers = fetchCached('app_users', async () => {
+            const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers });
+            return res.ok ? await res.json() : [];
+        });
+
+        const pSupportUsers = fetchCached('app_support_users', async () => {
+            const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/support-users", { headers });
+            return res.ok ? await res.json() : [];
+        });
+
+        // Esperamos TODO en paralelo nativo (Ahorro enorme de milisegundos).
+        // Los comentarios (fetchComments) ya se dispararon y se actualizarán en segundo plano sin bloquear la vista principal.
+        const [ticketData, filesData, statusesData, usersData, supportData] = await Promise.all([
+            pTicket, pFiles, pStatuses, pUsers, pSupportUsers
         ]);
 
         setTicket(ticketData);
         setFiles(filesData || []);
         setStatuses(statusesData || []);
         
-        const usersData = usersRes.ok ? await usersRes.json() : [];
         setUsersList(Array.isArray(usersData) ? usersData : []);
-
-        const supportData = supportUsersRes.ok ? await supportUsersRes.json() : [];
         setSupportUsers(Array.isArray(supportData) ? supportData : (supportData.data || []));
 
         if (ticketData) {
@@ -197,11 +219,13 @@ export const TicketDetail = () => {
             setDescriptionEdit(ticketData.sDescription);
             setTitleEdit(ticketData.sName || "");
             
-            await fetchComments(ticketData.iIdTask);
-            
             scrollToBottom();
         }
-      } catch (error) { console.error(error); } finally { setIsLoading(false); }
+      } catch (error) { 
+          console.error("Error cargando el ticket:", error); 
+      } finally { 
+          setIsLoading(false); 
+      }
     };
     loadData();
   }, [id]);

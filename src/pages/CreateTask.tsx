@@ -322,57 +322,60 @@ export const CreateTask = () => {
         const token = localStorage.getItem("token");
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        const [usersRes, rolesRes] = await Promise.all([
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers }),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles", { headers }),
+        // Helper de caché para usuarios y roles
+        const fetchCached = async (key: string, url: string) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            const res = await fetch(url, { headers });
+            const data = res.ok ? await res.json() : [];
+            const finalData = Array.isArray(data) ? data : (data?.data || data?.result || []);
+            sessionStorage.setItem(key, JSON.stringify(finalData));
+            return finalData;
+        };
+
+        const [usersData, rolesData] = await Promise.all([
+          fetchCached('app_users', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users"),
+          fetchCached('app_roles', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles")
         ]);
+          
+        const userStr = localStorage.getItem("user");
+        let myRoleId = 0;
+        let currentUserId = 0;
 
-        if (usersRes.ok && rolesRes.ok) {
-          const usersDataRaw = await usersRes.json();
-          const rolesDataRaw = await rolesRes.json();
-          
-          // Blindaje contra respuestas raras de la API
-          const usersData: ApiUser[] = Array.isArray(usersDataRaw) ? usersDataRaw : (usersDataRaw?.data || usersDataRaw?.result || []);
-          const rolesData = Array.isArray(rolesDataRaw) ? rolesDataRaw : (rolesDataRaw?.data || rolesDataRaw?.result || []);
-          
-          const userStr = localStorage.getItem("user");
-          let myRoleId = 0;
-          let currentUserId = 0;
-
-          if (userStr) { 
-            try { 
-              const u = JSON.parse(userStr); 
-              myRoleId = parseInt(u.ildRol || u.iIdRol || "0"); 
-              currentUserId = parseInt(u.iIdUser || u.ildUser || "0");
-            } catch (e) { console.error(e); } 
-          }
-          
-          // --- DETECTAR DEPARTAMENTO DEL USUARIO ACTUAL ---
-          if (currentUserId > 0) {
-            const currentUserData = usersData.find(u => (u.iIdUser === currentUserId) || (u.ildUser === currentUserId));
-            if (currentUserData && currentUserData.departmentName) {
-                setUserDepartment(currentUserData.departmentName);
-            }
-          }
-          // ------------------------------------------------
-
-          if (myRoleId === 0) { 
-              setUsers([]); 
-              return; 
-          }
-          
-          const getDescendantRoles = (allRoles: any[], parentId: number): number[] => {
-            const descendants: number[] = [];
-            const findChildren = (id: number) => {
-              const children = allRoles.filter((r) => r.iIdParent == id || r.ildParent == id);
-              for (const child of children) { const cId = child.iIdRol || child.ildRol; if (cId && !descendants.includes(cId)) { descendants.push(cId); findChildren(cId); } }
-            };
-            findChildren(parentId);
-            return descendants;
-          };
-          const validRoleIds = getDescendantRoles(rolesData, myRoleId);
-          setUsers(usersData.filter((u) => { const rid = u.iIdRol || u.ildRol; return rid ? validRoleIds.includes(rid) : false; }));
+        if (userStr) { 
+          try { 
+            const u = JSON.parse(userStr); 
+            myRoleId = parseInt(u.ildRol || u.iIdRol || "0"); 
+            currentUserId = parseInt(u.iIdUser || u.ildUser || "0");
+          } catch (e) { console.error(e); } 
         }
+        
+        // --- DETECTAR DEPARTAMENTO DEL USUARIO ACTUAL ---
+        if (currentUserId > 0) {
+          const currentUserData = usersData.find((u: any) => (u.iIdUser === currentUserId) || (u.ildUser === currentUserId));
+          if (currentUserData && currentUserData.departmentName) {
+              setUserDepartment(currentUserData.departmentName);
+          }
+        }
+        // ------------------------------------------------
+
+        if (myRoleId === 0) { 
+            setUsers([]); 
+            return; 
+        }
+        
+        const getDescendantRoles = (allRoles: any[], parentId: number): number[] => {
+          const descendants: number[] = [];
+          const findChildren = (id: number) => {
+            const children = allRoles.filter((r) => r.iIdParent == id || r.ildParent == id);
+            for (const child of children) { const cId = child.iIdRol || child.ildRol; if (cId && !descendants.includes(cId)) { descendants.push(cId); findChildren(cId); } }
+          };
+          findChildren(parentId);
+          return descendants;
+        };
+        const validRoleIds = getDescendantRoles(rolesData, myRoleId);
+        setUsers(usersData.filter((u: any) => { const rid = u.iIdRol || u.ildRol; return rid ? validRoleIds.includes(rid) : false; }));
+        
       } catch (error) { 
           console.error(error); 
       } finally {

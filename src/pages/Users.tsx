@@ -201,7 +201,7 @@ export const Users = () => {
   const [exportRoleFilter, setExportRoleFilter] = useState("all");
   const [exportDeptFilter, setExportDeptFilter] = useState("all");
 
-  // Carga de datos SEGURA
+  // Carga de datos SEGURA (Y OPTIMIZADA)
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -209,16 +209,31 @@ export const Users = () => {
         const token = localStorage.getItem('token');
         const headers = token ? { "Authorization": `Bearer ${token}` } : undefined;
 
-        const [usersRes, deptsRes] = await Promise.all([
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers }),
-          fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments", { headers }),
+        // Helper de caché
+        const fetchCached = async (key: string, url: string) => {
+            const cached = sessionStorage.getItem(key);
+            if (cached) return JSON.parse(cached);
+            
+            const res = await fetch(url, { headers });
+            const data = await res.json();
+            
+            // Si la respuesta es exitosa y tiene datos, guardamos en caché
+            if (res.ok) {
+                // Acomodamos la data según como venga (array directo o dentro de result/data)
+                const finalData = Array.isArray(data) ? data : (data?.data || data?.result || []);
+                sessionStorage.setItem(key, JSON.stringify(finalData));
+                return finalData;
+            }
+            return Array.isArray(data) ? data : (data?.data || data?.result || []);
+        };
+
+        const [usersData, deptsData] = await Promise.all([
+           fetchCached('app_users', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users"),
+           fetchCached('app_departments', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments")
         ]);
 
-        const usersData = await usersRes.json();
-        const deptsData = await deptsRes.json();
-
-        setUsers(Array.isArray(usersData) ? usersData : (usersData?.data || usersData?.result || []));
-        setDepartments(Array.isArray(deptsData) ? deptsData : (deptsData?.data || deptsData?.result || []));
+        setUsers(usersData);
+        setDepartments(deptsData);
 
       } catch (error) {
         console.error("Error al cargar datos:", error);

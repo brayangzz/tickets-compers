@@ -15,6 +15,8 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { AssignedTasksList } from "./pages/AssignedTasksList";
 import { MyAssignedTasksList } from "./pages/MyAssignedTasksList";
 import { PersonalTasksList } from "./pages/PersonalTasksList";
+import { CalendarPage } from "./pages/CalendarPage";
+import { getLocalStorageJSON } from "./utils/storage";
 
 // Seguridad
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
@@ -22,18 +24,13 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 // --- ENRUTADOR INTELIGENTE RAÍZ (TRAFFIC CONTROLLER) ---
 // Decide qué pantalla inicial cargar según los permisos del usuario
 const SmartHome = () => {
-  const userString = localStorage.getItem("user");
+  const user = getLocalStorageJSON<{ iIdRol?: number | string; ildRol?: number | string; idRole?: number | string } | null>("user", null);
   let isPrivileged = false;
   
-  if (userString) {
-    try {
-      const user = JSON.parse(userString);
-      const userRoleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
-      // Solo el ID 32 (Soporte TI) tiene acceso al Dashboard General de Tickets
-      isPrivileged = [32].includes(userRoleId);
-    } catch (e) {
-      console.error("Error leyendo usuario para enrutamiento", e);
-    }
+  if (user) {
+    const userRoleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
+    // Solo el ID 32 (Soporte TI) tiene acceso al Dashboard General de Tickets
+    isPrivileged = [32].includes(userRoleId);
   }
 
   // Si es Soporte muestra el Dashboard principal, si no, lo redirige a sus tareas
@@ -85,6 +82,7 @@ export const router = createBrowserRouter([
               { path: "my-tasks/assigned", element: <AssignedTasksList /> },
               { path: "my-tasks/delegated", element: <MyAssignedTasksList /> },
               { path: "my-tasks/personal", element: <PersonalTasksList /> },
+              { path: "calendar", element: <CalendarPage /> },
               { path: "settings", element: <div className="p-10 text-slate-400">⚙️ Configuración</div> },
             ]
           }

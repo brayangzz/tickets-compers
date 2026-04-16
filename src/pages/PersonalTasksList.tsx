@@ -5,6 +5,9 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePortalPos } from "../hooks/usePortalPos";
+import { fetchCachedUrl } from "../utils/cache";
+import { toApiUrl } from "../config/api";
 
 // IMPORTAMOS SERVICIOS
 import { getPersonalTasks, deletePersonalTask, type PersonalTask } from "../services/taskService";
@@ -17,22 +20,10 @@ interface ApiStatus {
     bActive?: boolean;
 }
 
-// ─── UTILIDAD DE PORTAL PARA SELECT ──────────────────────────────────────────
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
-  };
-  return { triggerRef, pos, updatePos };
-};
-
 // ─── DROPDOWN PREMIUM (SIN SALTOS Y RESPONSIVO) ──────────────────────────────
 const CustomDropdown = ({ value, onChange, options, placeholder }: { value: string, onChange: (v: string) => void, options: { id: string | number, label: string }[], placeholder: string }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const { triggerRef, pos, updatePos } = usePortalPos();
+    const { triggerRef, pos, updatePos } = usePortalPos<HTMLButtonElement>();
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -134,7 +125,11 @@ export const PersonalTasksList = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateOrder, setDateOrder] = useState<"desc" | "asc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8; // Paginación activa para 8 ítems
+  const itemsPerPage = 8; // Paginacion activa para 8 items
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<PersonalTask | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // CARGAR DATOS
   useEffect(() => {
@@ -156,16 +151,7 @@ export const PersonalTasksList = () => {
         // Solicitamos Estatus Seguro
         let validStatuses: ApiStatus[] = [];
         try {
-            const fetchCached = async (key: string, url: string) => {
-                const cached = sessionStorage.getItem(key);
-                if (cached) return JSON.parse(cached);
-                const res = await fetch(url, { headers });
-                const data = await res.json();
-                sessionStorage.setItem(key, JSON.stringify(data));
-                return data;
-            };
-            
-            const statusData = await fetchCached('app_statuses', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/status");
+            const statusData = await fetchCachedUrl<any>('app_statuses', toApiUrl("/general/status"), headers);
             validStatuses = Array.isArray(statusData) ? statusData : (statusData?.data || statusData?.result || []);
         } catch (error) {
             console.error("Error cargando estatus:", error);
@@ -192,16 +178,31 @@ export const PersonalTasksList = () => {
   }, []);
 
   // --- LÓGICA DE ELIMINAR ---
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
-      e.stopPropagation(); 
-      if (!window.confirm("¿Estás seguro de eliminar esta tarea?")) return;
-
-      const success = await deletePersonalTask(id);
+  const handleDelete = (e: React.MouseEvent, task: PersonalTask) => {
+      e.stopPropagation();
+      setDeleteError(null);
+      setTaskToDelete(task);
+      setIsDeleteModalOpen(true);
+  };
+  const closeDeleteModal = () => {
+      if (isDeleting) return;
+      setIsDeleteModalOpen(false);
+      setTaskToDelete(null);
+      setDeleteError(null);
+  };
+  const handleConfirmDelete = async () => {
+      if (!taskToDelete || isDeleting) return;
+      setIsDeleting(true);
+      setDeleteError(null);
+      const success = await deletePersonalTask(taskToDelete.iIdTask);
       if (success) {
-          setTasks(prev => prev.filter(t => t.iIdTask !== id));
+          setTasks((prev) => prev.filter((t) => t.iIdTask !== taskToDelete.iIdTask));
+          setIsDeleteModalOpen(false);
+          setTaskToDelete(null);
       } else {
-          alert("No se pudo eliminar la tarea");
+          setDeleteError("No se pudo eliminar la tarea. Intenta de nuevo.");
       }
+      setIsDeleting(false);
   };
 
   // --- HELPERS ---
@@ -462,7 +463,7 @@ export const PersonalTasksList = () => {
                                                     <span className="material-symbols-rounded text-lg">visibility</span>
                                                 </button>
                                                 <button 
-                                                    onClick={(e) => handleDelete(e, task.iIdTask)}
+                                                    onClick={(e) => handleDelete(e, task)}
                                                     className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-400 hover:text-rose-500 transition-colors"
                                                     title="Eliminar tarea"
                                                 >
@@ -528,6 +529,97 @@ export const PersonalTasksList = () => {
             </div>
           )}
       </Card>
+
+      <AnimatePresence>
+        {isDeleteModalOpen && taskToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeDeleteModal(); }}
+          >
+            <motion.div
+              initial={{ scale: 0.88, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              className="relative w-full max-w-sm bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/60 rounded-[28px] shadow-2xl overflow-hidden"
+            >
+              <div className="h-1.5 w-full bg-gradient-to-r from-rose-500 to-pink-600" />
+              <div className="p-7 flex flex-col items-center text-center gap-5">
+                <motion.div
+                  initial={{ scale: 0.6, rotate: -15, opacity: 0 }}
+                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 18, delay: 0.05 }}
+                  className="w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shadow-inner"
+                >
+                  <span className="material-symbols-rounded text-3xl text-rose-500">delete</span>
+                </motion.div>
+                <div className="flex flex-col gap-1.5">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Eliminar tarea</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-snug">
+                    Esta accion no se puede deshacer.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl w-full">
+                  <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-[10px] font-bold text-white shadow">
+                    #{taskToDelete.iIdTask}
+                  </div>
+                  <div className="flex flex-col min-w-0 text-left">
+                    <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100 truncate">
+                      {(taskToDelete as any).sName || taskToDelete.sDescription}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium truncate">
+                      {(taskToDelete as any).sName ? taskToDelete.sDescription : "Tarea personal"}
+                    </span>
+                  </div>
+                </div>
+                {deleteError && (
+                  <div className="w-full rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-2.5 text-xs font-semibold text-rose-600 dark:text-rose-300">
+                    {deleteError}
+                  </div>
+                )}
+                <div className="flex gap-3 w-full mt-1">
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={closeDeleteModal}
+                    disabled={isDeleting}
+                    className="flex-1 py-3.5 font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl transition-all disabled:opacity-40"
+                  >
+                    Cancelar
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.03, boxShadow: "0 8px 24px rgba(244,63,94,0.35)" }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={handleConfirmDelete}
+                    disabled={isDeleting}
+                    className="flex-[1.4] flex items-center justify-center gap-2 py-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-bold shadow-lg shadow-rose-500/30 transition-all disabled:opacity-50"
+                  >
+                    {isDeleting ? (
+                      <motion.span
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                        className="material-symbols-rounded text-[20px]"
+                      >
+                        progress_activity
+                      </motion.span>
+                    ) : (
+                      <>
+                        <span className="material-symbols-rounded text-[18px]">delete</span>
+                        Eliminar
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
+

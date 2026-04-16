@@ -1,4 +1,6 @@
-const API_URL = "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api";
+import { API_BASE_URL } from "../config/api";
+
+const API_URL = API_BASE_URL;
 
 // Definimos la estructura exacta que viene de tu backend (según tu captura)
 export interface Role {

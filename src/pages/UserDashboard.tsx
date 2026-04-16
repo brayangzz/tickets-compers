@@ -5,7 +5,12 @@ import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
 import { getPersonalTasks, type PersonalTask } from "../services/taskService";
 import { getTaskTypes, getStatuses, type TaskType, type Status } from "../services/catalogService";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { fetchCached } from "../utils/cache";
+import { getLocalStorageJSON } from "../utils/storage";
+import { useCountUp } from "../hooks/useCountUp";
 import { motion, AnimatePresence } from "framer-motion";
+import { toApiUrl } from "../config/api";
 
 interface ApiAssignedTask {
     iIdTask: number;
@@ -32,47 +37,6 @@ interface TableSectionProps {
     accentColor?: string;
     emptyMessage?: string;
 }
-
-// ── Hook de contador animado ──────────────────────────────────────────────────
-const useCountUp = (target: number, duration = 900) => {
-    const [count, setCount] = useState(0);
-    const raf = useRef<number>(0);
-    const start = useRef<number>(0);
-    const prev = useRef(0);
-
-    useEffect(() => {
-        const from = prev.current;
-        prev.current = target;
-        if (from === target) return;
-        const diff = target - from;
-        cancelAnimationFrame(raf.current);
-        start.current = 0;
-        const step = (ts: number) => {
-            if (!start.current) start.current = ts;
-            const elapsed = ts - start.current;
-            const progress = Math.min(elapsed / duration, 1);
-            const ease = 1 - Math.pow(1 - progress, 3);
-            setCount(Math.round(from + diff * ease));
-            if (progress < 1) raf.current = requestAnimationFrame(step);
-        };
-        raf.current = requestAnimationFrame(step);
-        return () => cancelAnimationFrame(raf.current);
-    }, [target, duration]);
-
-    return count;
-};
-
-const getInitials = (name: string) => {
-    if (!name) return "U";
-    const parts = name.trim().split(" ");
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
-const getAvatarGradient = (id: number) => {
-    const g = ["from-blue-500 to-indigo-600","from-emerald-400 to-teal-600","from-orange-400 to-rose-500","from-purple-500 to-fuchsia-600","from-cyan-400 to-blue-600"];
-    return g[id % g.length];
-};
 
 // ── KPI Widget ────────────────────────────────────────────────────────────────
 const KpiCard = ({
@@ -299,13 +263,15 @@ export const UserDashboard = () => {
     const [searchTerm, setSearchTerm]                 = useState("");
     const [dateOrder, setDateOrder]                   = useState<"desc" | "asc">("desc");
 
-    // Mismo patrón que Dashboard.tsx
-    const userString  = localStorage.getItem("user");
-    const currentUser = userString ? JSON.parse(userString) : {};
+   
+    const currentUser = getLocalStorageJSON<{
+        sUser?: string;
+        employeeName?: string;
+    }>("user", {});
     const userName    = currentUser.sUser || currentUser.employeeName || "Usuario";
     const firstName   = userName.split(" ")[0];
 
-    // Saludo dinámico (reutiliza getGreeting si estuviera disponible)
+    // Saludo dinámico
     const greeting = (() => {
         const h = new Date().getHours();
         if (h < 12) return "Buenos días";
@@ -319,19 +285,12 @@ export const UserDashboard = () => {
             try {
                 const token = localStorage.getItem("token");
                 const headers = { Authorization: `Bearer ${token}` };
-                const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
-                    const cached = sessionStorage.getItem(key);
-                    if (cached) return JSON.parse(cached);
-                    const data = await fetcher();
-                    sessionStorage.setItem(key, JSON.stringify(data));
-                    return data;
-                };
                 const pTypes    = fetchCached("app_task_types", () => getTaskTypes());
                 const pStatuses = fetchCached("app_statuses",   () => getStatuses());
                 const [tasksData, typesData, statusData, assignedRes, delegatedRes] = await Promise.all([
                     getPersonalTasks(), pTypes, pStatuses,
-                    fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers }),
-                    fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-by-me", { headers }),
+                    fetch(toApiUrl("/tasks/assigned/assigned-to-me"), { headers }),
+                    fetch(toApiUrl("/tasks/assigned/assigned-by-me"), { headers }),
                 ]);
                 const assignedData  = assignedRes.ok  ? await assignedRes.json()  : [];
                 const delegatedData = delegatedRes.ok ? await delegatedRes.json() : [];

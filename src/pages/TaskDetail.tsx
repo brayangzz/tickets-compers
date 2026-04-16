@@ -3,9 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
-import { getPersonalTasks, updatePersonalTask, deletePersonalTask } from "../services/taskService";
+import { getPersonalTasks, updatePersonalTask, deletePersonalTask, type UpdateTaskPayload } from "../services/taskService";
 import { getStatuses, type Status } from "../services/catalogService";
 import { motion, AnimatePresence } from "framer-motion";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { getStatusStyle } from "../utils/status";
+import { getLocalStorageJSON, getSessionStorageJSON } from "../utils/storage";
+import { toApiUrl } from "../config/api";
 
 // --- INTERFACES BASADAS EN TU POSTMAN ---
 interface ApiTask {
@@ -23,6 +27,9 @@ interface ApiTask {
     dTaskStartDate: string | null;
     dDateUserCreate: string | null;
     dTaskCompletionDate?: string | null;
+    iIdUserRaisedTask?: number;
+    iIdBranch?: number | null;
+    iIdDepartment?: number | null;
 }
 
 interface ApiFile {
@@ -32,39 +39,18 @@ interface ApiFile {
     dDateUserCreate: string;
 }
 
-// --- HELPERS VISUALES ---
-const getInitials = (name: string) => {
-    if (!name) return 'U';
-    const parts = name.trim().split(' ');
-    if (parts.length === 0) return 'U';
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+type TaskDetailUser = {
+    ildUser?: number | string;
+    iIdUser?: number | string;
 };
 
-const getAvatarGradient = (id: number) => {
-    const gradients = ['from-blue-500 to-indigo-600', 'from-emerald-400 to-teal-600', 'from-orange-400 to-rose-500', 'from-purple-500 to-fuchsia-600', 'from-cyan-400 to-blue-600'];
-    return gradients[id % gradients.length];
-};
-
-const getStatusStyle = (id: number) => {
-    switch(id) {
-        case 1: return { bg: "bg-amber-500", text: "text-amber-500", label: "Pendiente" };
-        case 2: return { bg: "bg-blue-500", text: "text-blue-500", label: "Abierto" };
-        case 3: return { bg: "bg-indigo-500", text: "text-indigo-500", label: "En Proceso" };
-        case 4: return { bg: "bg-emerald-500", text: "text-emerald-500", label: "Completado" };
-        case 5: return { bg: "bg-teal-500", text: "text-teal-500", label: "Solucionado" };
-        case 6: return { bg: "bg-rose-500", text: "text-rose-500", label: "Cancelado" };
-        default: return { bg: "bg-slate-500", text: "text-slate-500", label: "Desconocido" };
-    }
-};
-
+// --- MODO EDICIÓN INTEGRADO (Título y Descripción) ---
 export const TaskDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   
   // --- IDENTIDAD DEL USUARIO ACTUAL ---
-  const userString = localStorage.getItem('user');
-  const userObj = userString ? JSON.parse(userString) : {};
+  const userObj = getLocalStorageJSON<TaskDetailUser>('user', {});
   const currentUserId = Number(userObj.ildUser || userObj.iIdUser || 0);
 
   // --- ESTADOS ---
@@ -84,6 +70,31 @@ export const TaskDetail = () => {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeletingTask, setIsDeletingTask] = useState(false);
+  const [deleteTaskError, setDeleteTaskError] = useState<string | null>(null);
+
+  const refreshPersonalTask = async (taskId: number) => {
+    const personalTasks = await getPersonalTasks();
+    if (!Array.isArray(personalTasks)) return null;
+    return (personalTasks as ApiTask[]).find((item) => item.iIdTask === taskId) || null;
+  };
+
+  const buildPersonalTaskPayload = (source: ApiTask, overrides: Partial<UpdateTaskPayload> = {}): UpdateTaskPayload => ({
+    sName: source.sName || "",
+    sDescription: source.sDescription || "",
+    iIdStatus: source.iIdStatus,
+    dTaskCompletionDate: source.dTaskCompletionDate ?? null,
+    iIdTaskType: source.iIdTaskType,
+    dTaskStartDate: source.dTaskStartDate ?? null,
+    iIdTask: source.iIdTask,
+    iIdUserRaisedTask: source.iIdUserRaisedTask,
+    iIdUserCreate: source.iIdUserCreate,
+    iIdBranch: source.iIdBranch ?? null,
+    iIdDepartment: source.iIdDepartment ?? null,
+    bActive: true,
+    ...overrides
+  });
 
   // --- CARGA DE DATOS ---
   useEffect(() => {
@@ -95,21 +106,26 @@ export const TaskDetail = () => {
         const headers = { "Authorization": `Bearer ${token}` };
         const taskId = Number(id);
 
-        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
-            const cached = sessionStorage.getItem(key);
-            if (cached) return JSON.parse(cached);
+        const fetchCached = async <T,>(key: string, fetcher: () => Promise<T>) => {
+            const cached = getSessionStorageJSON<T | null>(key, null);
+            if (cached !== null) return cached;
+
             const data = await fetcher();
-            sessionStorage.setItem(key, JSON.stringify(data));
+            if (data !== undefined) {
+                sessionStorage.setItem(key, JSON.stringify(data));
+            } else {
+                sessionStorage.removeItem(key);
+            }
             return data;
         };
 
         const pStatuses = fetchCached('app_statuses', () => getStatuses());
 
         const [assignedToMeRes, assignedByMeRes, personalData, filesRes, statusesData] = await Promise.all([
-            fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-to-me", { headers }),
-            fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-by-me", { headers }),
+            fetch(toApiUrl("/tasks/assigned/assigned-to-me"), { headers }),
+            fetch(toApiUrl("/tasks/assigned/assigned-by-me"), { headers }),
             getPersonalTasks(),
-            fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/task-files/${taskId}`, { headers }),
+            fetch(toApiUrl(`/task-files/${taskId}`), { headers }),
             pStatuses
         ]);
 
@@ -160,16 +176,13 @@ export const TaskDetail = () => {
         let success = false;
 
         if (isPersonalTask) {
-            const payload = {
-                sName: task.sName, // Mantenemos el título
-                sDescription: task.sDescription,
+            const payload = buildPersonalTaskPayload(task, {
                 iIdStatus: currentStatusId,
                 dTaskCompletionDate: currentStatusId === 4 || currentStatusId === 5 ? new Date().toISOString() : null,
-                bActive: true
-            };
-            success = await updatePersonalTask(task.iIdTask, payload as any);
+            });
+            success = await updatePersonalTask(task.iIdTask, payload);
         } else {
-            const response = await fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/status`, {
+            const response = await fetch(toApiUrl("/tasks/assigned/status"), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -182,7 +195,8 @@ export const TaskDetail = () => {
 
         if (success) {
             setHasChanges(false);
-            setTask({ ...task, iIdStatus: currentStatusId });
+            const refreshedTask = await refreshPersonalTask(task.iIdTask);
+            setTask(refreshedTask ? { ...task, ...refreshedTask } : { ...task, iIdStatus: currentStatusId });
         } else {
             alert("Hubo un error al guardar el estatus.");
         }
@@ -203,15 +217,17 @@ export const TaskDetail = () => {
       
       setIsSavingEdit(true);
       try {
-          const payload = {
-              sName: titleEdit, // <--- AÑADIDO
-              sDescription: descriptionEdit,
+          const payload = buildPersonalTaskPayload(task, {
+              sName: titleEdit.trim(),
+              sDescription: descriptionEdit.trim(),
               iIdStatus: task.iIdStatus,
-              bActive: true
-          };
-          const success = await updatePersonalTask(task.iIdTask, payload as any);
+          });
+          const success = await updatePersonalTask(task.iIdTask, payload);
           if (success) {
-              setTask({ ...task, sDescription: descriptionEdit, sName: titleEdit });
+              const refreshedTask = await refreshPersonalTask(task.iIdTask);
+              setTask(refreshedTask ? { ...task, ...refreshedTask } : { ...task, sDescription: descriptionEdit.trim(), sName: titleEdit.trim() });
+              setDescriptionEdit(descriptionEdit.trim());
+              setTitleEdit(titleEdit.trim());
               setIsEditingDescription(false);
           } else {
               alert("Error al actualizar la tarea");
@@ -226,17 +242,35 @@ export const TaskDetail = () => {
       setIsEditingDescription(false);
   };
 
-  const handleDelete = async () => {
-      if (!task) return;
-      if (window.confirm("¿Estás seguro de eliminar esta tarea? Esta acción no se puede deshacer.")) {
-          try {
-              const success = await deletePersonalTask(task.iIdTask);
-              if (success) navigate(-1);
-              else alert("Error al eliminar");
-          } catch(e) { console.error(e); }
+  const openDeleteModal = () => {
+      if (!task || isDeletingTask) return;
+      setDeleteTaskError(null);
+      setIsDeleteModalOpen(true);
+  };
+  const closeDeleteModal = () => {
+      if (isDeletingTask) return;
+      setIsDeleteModalOpen(false);
+      setDeleteTaskError(null);
+  };
+  const handleConfirmDelete = async () => {
+      if (!task || isDeletingTask) return;
+      setIsDeletingTask(true);
+      setDeleteTaskError(null);
+      try {
+          const success = await deletePersonalTask(task.iIdTask);
+          if (success) {
+              setIsDeleteModalOpen(false);
+              navigate(-1);
+          } else {
+              setDeleteTaskError("No se pudo eliminar la tarea. Intenta de nuevo.");
+          }
+      } catch (e) {
+          console.error(e);
+          setDeleteTaskError("No se pudo eliminar la tarea. Intenta de nuevo.");
+      } finally {
+          setIsDeletingTask(false);
       }
   };
-
   const formatDate = (d: string | null | undefined) => {
       if (!d) return "No especificada";
       const date = new Date(d);
@@ -271,32 +305,11 @@ export const TaskDetail = () => {
 
         {/* ACCIONES (Editar/Eliminar) - Solo para tareas personales */}
         {canEditDescription && (
-            <AnimatePresence mode="wait">
-                {!isEditingDescription ? (
-                    <motion.div key="view-actions" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex gap-2">
-                        <button onClick={() => setIsEditingDescription(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-white hover:shadow-md transition-all font-bold text-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-                            <span className="material-symbols-rounded text-lg">edit</span> Editar
-                        </button>
-                        <button onClick={handleDelete} className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-800 transition-all font-bold text-sm">
-                            <span className="material-symbols-rounded text-lg">delete</span>
-                        </button>
-                    </motion.div>
-                ) : (
-                    <motion.div key="edit-actions" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex gap-2">
-                        <button onClick={handleCancelEdit} className="px-5 py-2.5 rounded-full text-sm font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
-                            Cancelar
-                        </button>
-                        <button 
-                            onClick={handleSaveDescription} 
-                            disabled={isSavingEdit || !descriptionEdit.trim() || !titleEdit.trim()} 
-                            className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg disabled:opacity-50 transition-all active:scale-95"
-                        >
-                            {isSavingEdit ? <span className="material-symbols-rounded animate-spin text-lg">progress_activity</span> : <span className="material-symbols-rounded text-lg">save</span>} 
-                            Guardar
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <motion.div key="view-actions" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="flex gap-2">
+                <button onClick={openDeleteModal} className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-800 transition-all font-bold text-sm">
+                    <span className="material-symbols-rounded text-lg">delete</span>
+                </button>
+            </motion.div>
         )}
       </div>
 
@@ -482,6 +495,96 @@ export const TaskDetail = () => {
           </div>
       </div>
 
+      <AnimatePresence>
+      {isDeleteModalOpen && task && (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeDeleteModal(); }}
+        >
+            <motion.div
+                initial={{ scale: 0.88, opacity: 0, y: 40 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.92, opacity: 0, y: 20 }}
+                transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                className="relative w-full max-w-sm bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/60 rounded-[28px] shadow-2xl overflow-hidden"
+            >
+                <div className="h-1.5 w-full bg-gradient-to-r from-rose-500 to-pink-600" />
+                <div className="p-7 flex flex-col items-center text-center gap-5">
+                    <motion.div
+                        initial={{ scale: 0.6, rotate: -15, opacity: 0 }}
+                        animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 18, delay: 0.05 }}
+                        className="w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shadow-inner"
+                    >
+                        <span className="material-symbols-rounded text-3xl text-rose-500">delete</span>
+                    </motion.div>
+                    <div className="flex flex-col gap-1.5">
+                        <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Eliminar tarea</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-snug">
+                            Esta accion no se puede deshacer.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl w-full">
+                        <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center text-[10px] font-bold text-white shadow">
+                            #{task.iIdTask}
+                        </div>
+                        <div className="flex flex-col min-w-0 text-left">
+                            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100 truncate">
+                                {task.sName || task.sDescription}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-medium truncate">
+                                {task.sName ? task.sDescription : "Tarea personal"}
+                            </span>
+                        </div>
+                    </div>
+                    {deleteTaskError && (
+                        <div className="w-full rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-2.5 text-xs font-semibold text-rose-600 dark:text-rose-300">
+                            {deleteTaskError}
+                        </div>
+                    )}
+                    <div className="flex gap-3 w-full mt-1">
+                        <motion.button
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.96 }}
+                            onClick={closeDeleteModal}
+                            disabled={isDeletingTask}
+                            className="flex-1 py-3.5 font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl transition-all disabled:opacity-40"
+                        >
+                            Cancelar
+                        </motion.button>
+                        <motion.button
+                            whileHover={{ scale: 1.03, boxShadow: "0 8px 24px rgba(244,63,94,0.35)" }}
+                            whileTap={{ scale: 0.96 }}
+                            onClick={handleConfirmDelete}
+                            disabled={isDeletingTask}
+                            className="flex-[1.4] flex items-center justify-center gap-2 py-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-bold shadow-lg shadow-rose-500/30 transition-all disabled:opacity-50"
+                        >
+                            {isDeletingTask ? (
+                                <motion.span
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                                    className="material-symbols-rounded text-[20px]"
+                                >
+                                    progress_activity
+                                </motion.span>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-rounded text-[18px]">delete</span>
+                                    Eliminar
+                                </>
+                            )}
+                        </motion.button>
+                    </div>
+                </div>
+            </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
       {/* --- LIGHTBOX DE IMAGEN --- */}
       <AnimatePresence>
       {previewImage && (
@@ -587,3 +690,5 @@ const TaskDetailSkeleton = () => (
         </div>
     </div>
 );
+
+

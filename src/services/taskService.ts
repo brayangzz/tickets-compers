@@ -1,9 +1,10 @@
+import { API_BASE_URL } from "../config/api";
 
-
-const API_URL = "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api";
+const API_URL = API_BASE_URL;
 
 export interface PersonalTask {
   iIdTask: number;
+  sName?: string;
   iIdTaskType: number;
   sDescription: string;
   iIdStatus: number;       
@@ -27,11 +28,93 @@ export interface CreateTaskPayload {
 
 // Interfaz para actualizar (Basada en tu Postman)
 export interface UpdateTaskPayload {
+  sName?: string;
   sDescription: string;
   iIdStatus: number;
-  dTaskCompletionDate: string | null;
+  dTaskCompletionDate?: string | null;
+  iIdTaskType?: number;
+  dTaskStartDate?: string | null;
+  iIdTask?: number;
+  iIdUserRaisedTask?: number;
+  iIdUserCreate?: number;
+  iIdBranch?: number | null;
+  iIdDepartment?: number | null;
+  ildTaskType?: number;
+  ildStatus?: number;
+  ildTask?: number;
+  ildUserRaisedTask?: number;
+  ildUserCreate?: number;
+  ildBranch?: number | null;
+  ildDepartment?: number | null;
   bActive: boolean;
 }
+
+const getAuthHeaders = (token: string) => ({
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${token}`
+});
+
+const normalizeText = (value?: string | null) => (value || "").trim();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const matchesExpectedTaskData = (task: PersonalTask, payload: UpdateTaskPayload) => {
+  const sameName = payload.sName === undefined || normalizeText(task.sName) === normalizeText(payload.sName);
+  const sameDescription = normalizeText(task.sDescription) === normalizeText(payload.sDescription);
+  const sameStatus = Number(task.iIdStatus) === Number(payload.iIdStatus);
+  return sameName && sameDescription && sameStatus;
+};
+
+const getPersonalTaskById = async (id: number, token: string): Promise<PersonalTask | null> => {
+  try {
+    const response = await fetch(`${API_URL}/tasks/personal`, {
+      method: "GET",
+      headers: getAuthHeaders(token),
+      cache: "no-store"
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const list = Array.isArray(data) ? data : [];
+    return list.find((task: PersonalTask) => task.iIdTask === id) || null;
+  } catch {
+    return null;
+  }
+};
+
+const withLegacyAliases = (payload: UpdateTaskPayload): UpdateTaskPayload => ({
+  ...payload,
+  ildTaskType: payload.iIdTaskType,
+  ildStatus: payload.iIdStatus,
+  ildTask: payload.iIdTask,
+  ildUserRaisedTask: payload.iIdUserRaisedTask,
+  ildUserCreate: payload.iIdUserCreate,
+  ildBranch: payload.iIdBranch,
+  ildDepartment: payload.iIdDepartment
+});
+
+const parsePossibleBooleanResponse = (raw: string) => {
+  if (!raw) return null;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "true" || trimmed === "false") return trimmed === "true";
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "boolean") return parsed;
+    if (typeof parsed?.success === "boolean") return parsed.success;
+    if (typeof parsed?.result === "boolean") return parsed.result;
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const buildTicketFallbackPayload = (payload: UpdateTaskPayload) => ({
+  sName: payload.sName || "",
+  sDescription: payload.sDescription,
+  iIdStatus: payload.iIdStatus,
+  iIdBranch: payload.iIdBranch ?? 0,
+  iIdDepartment: payload.iIdDepartment ?? 0,
+  dTaskCompletionDate: payload.dTaskCompletionDate ?? null,
+  bActive: payload.bActive
+});
 
 export const getPersonalTasks = async (): Promise<PersonalTask[]> => {
   const token = localStorage.getItem('token');
@@ -40,10 +123,8 @@ export const getPersonalTasks = async (): Promise<PersonalTask[]> => {
   try {
     const response = await fetch(`${API_URL}/tasks/personal`, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
+      headers: getAuthHeaders(token),
+      cache: "no-store"
     });
 
     if (!response.ok) throw new Error("Error al obtener tareas");
@@ -62,10 +143,7 @@ export const createPersonalTask = async (task: CreateTaskPayload): Promise<any> 
   try {
     const response = await fetch(`${API_URL}/tasks/personal`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
+      headers: getAuthHeaders(token),
       body: JSON.stringify(task)
     });
 
@@ -86,20 +164,66 @@ export const updatePersonalTask = async (id: number, payload: UpdateTaskPayload)
   if (!token) return false;
 
   try {
-    const response = await fetch(`${API_URL}/tasks/personal/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const normalizedPayload = { ...payload, iIdTask: payload.iIdTask ?? id };
+    const payloadWithAliases = withLegacyAliases(normalizedPayload);
+    const ticketFallbackPayload = buildTicketFallbackPayload(normalizedPayload);
 
-    if (!response.ok) {
-        console.error("Error backend:", await response.text());
-        throw new Error("Error al actualizar tarea");
+    const attempts: Array<{ label: string; execute: () => Promise<Response> }> = [
+      {
+        label: "put-standard-json",
+        execute: () => fetch(`${API_URL}/tasks/personal/${id}`, {
+          method: "PUT",
+          headers: getAuthHeaders(token),
+          body: JSON.stringify(normalizedPayload)
+        })
+      },
+      {
+        label: "put-legacy-json",
+        execute: () => fetch(`${API_URL}/tasks/personal/${id}`, {
+          method: "PUT",
+          headers: getAuthHeaders(token),
+          body: JSON.stringify(payloadWithAliases)
+        })
+      },
+      {
+        label: "put-ticket-fallback-json",
+        execute: () => fetch(`${API_URL}/tickets/${id}`, {
+          method: "PUT",
+          headers: getAuthHeaders(token),
+          body: JSON.stringify(ticketFallbackPayload)
+        })
+      }
+    ];
+
+    for (const attempt of attempts) {
+      const response = await attempt.execute();
+
+      if (!response.ok) {
+        console.warn(`[updatePersonalTask] intento ${attempt.label} falló con status ${response.status}`);
+        continue;
+      }
+
+      const rawResponse = await response.text();
+      const parsedBoolean = parsePossibleBooleanResponse(rawResponse);
+      if (parsedBoolean === false) {
+        console.warn(`[updatePersonalTask] intento ${attempt.label} respondió false explícito:`, rawResponse);
+        continue;
+      }
+
+      // Damos un margen corto para backend con persistencia eventual.
+      for (let i = 0; i < 6; i += 1) {
+        if (i > 0) await sleep(350);
+        const updatedTask = await getPersonalTaskById(id, token);
+        if (!updatedTask || matchesExpectedTaskData(updatedTask, normalizedPayload)) {
+          return true;
+        }
+      }
+
+      console.warn(`[updatePersonalTask] intento ${attempt.label} respondió ok, pero sin reflejar cambios aún. Respuesta:`, rawResponse);
     }
-    return true;
+
+    console.error("La API respondió sin error, pero no reflejó los cambios esperados para la tarea:", id);
+    return false;
   } catch (error) {
     console.error(error);
     return false;
@@ -113,10 +237,7 @@ export const deletePersonalTask = async (id: number): Promise<boolean> => {
   try {
     const response = await fetch(`${API_URL}/tasks/personal/${id}`, {
       method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
+      headers: getAuthHeaders(token),
     });
 
     if (!response.ok) throw new Error("Error al eliminar tarea");
@@ -131,7 +252,7 @@ export const deletePersonalTask = async (id: number): Promise<boolean> => {
 export const createAssignedTask = async (payload: any) => {
     try {
         const token = localStorage.getItem('token');
-        const response = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned", {
+        const response = await fetch(`${API_URL}/tasks/assigned`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",

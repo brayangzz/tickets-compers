@@ -3,21 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { loginUser } from "../services/authService";
 import { getRoles } from "../services/roleService";
 import { motion, AnimatePresence } from "framer-motion";
+import { getLocalStorageJSON } from "../utils/storage";
+
+type LoginUser = {
+  iIdRol?: number | string;
+  ildRol?: number | string;
+  idRole?: number | string;
+};
 
 export const Login = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const userString = localStorage.getItem("user");
-    if (token && userString) {
-      try {
-        const user = JSON.parse(userString);
-        const roleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
-        navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
-      } catch {
-        navigate("/", { replace: true });
-      }
+    const user = getLocalStorageJSON<LoginUser | null>("user", null);
+    if (token && user) {
+      const roleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
+      navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
     }
   }, [navigate]);
 

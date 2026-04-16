@@ -5,6 +5,10 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
 import { motion, AnimatePresence } from "framer-motion";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { usePortalPos } from "../hooks/usePortalPos";
+import { fetchCachedUrl } from "../utils/cache";
+import { toApiUrl } from "../config/api";
 
 // --- INTERFACES LOCALES ---
 interface ApiAssignedTask {
@@ -26,35 +30,10 @@ interface ApiStatus {
     bActive?: boolean; 
 }
 
-const getInitials = (name: string) => {
-    if (!name) return 'U';
-    const parts = name.trim().split(' ');
-    if (parts.length === 0) return 'U';
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
-const getAvatarGradient = (id: number) => {
-    const gradients = ['from-blue-500 to-indigo-600', 'from-emerald-400 to-teal-600', 'from-orange-400 to-rose-500', 'from-purple-500 to-fuchsia-600', 'from-cyan-400 to-blue-600'];
-    return gradients[id % gradients.length];
-};
-
-// ─── UTILIDAD DE PORTAL PARA SELECT ──────────────────────────────────────────
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
-  };
-  return { triggerRef, pos, updatePos };
-};
-
 // ─── DROPDOWN PREMIUM (SIN SALTOS Y RESPONSIVO) ──────────────────────────────
 const CustomDropdown = ({ value, onChange, options, placeholder }: { value: string, onChange: (v: string) => void, options: string[], placeholder: string }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const { triggerRef, pos, updatePos } = usePortalPos();
+    const { triggerRef, pos, updatePos } = usePortalPos<HTMLButtonElement>();
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -160,7 +139,7 @@ export const MyAssignedTasksList = () => {
       const headers = { "Authorization": `Bearer ${token}` };
 
       try {
-          const tasksRes = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tasks/assigned/assigned-by-me", { headers });
+          const tasksRes = await fetch(toApiUrl("/tasks/assigned/assigned-by-me"), { headers });
           if (tasksRes.ok) {
               const data = await tasksRes.json();
               setTasks(Array.isArray(data) ? data : []); 
@@ -169,16 +148,7 @@ export const MyAssignedTasksList = () => {
 
       let validStatuses: ApiStatus[] = [];
       try {
-          const fetchCached = async (key: string, url: string) => {
-              const cached = sessionStorage.getItem(key);
-              if (cached) return JSON.parse(cached);
-              const res = await fetch(url, { headers });
-              const data = await res.json();
-              sessionStorage.setItem(key, JSON.stringify(data));
-              return data;
-          };
-          
-          const statusData = await fetchCached('app_statuses', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/status");
+          const statusData = await fetchCachedUrl<any>('app_statuses', toApiUrl("/general/status"), headers);
           validStatuses = Array.isArray(statusData) ? statusData : (statusData?.data || statusData?.result || []);
       } catch (error) { console.error("Error cargando estatus:", error); }
 

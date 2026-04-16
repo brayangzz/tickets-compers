@@ -6,6 +6,10 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { getTicketById, getTicketFiles, updateTicket, type Ticket } from "../services/ticketService";
 import { getStatuses, type Status } from "../services/catalogService";
 import { motion, AnimatePresence } from "framer-motion";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { getStatusConfig } from "../utils/status";
+import { getLocalStorageJSON, getSessionStorageJSON } from "../utils/storage";
+import { toApiUrl } from "../config/api";
 
 // --- INTERFACES ---
 interface ApiComment {
@@ -43,18 +47,15 @@ interface ApiUser {
     employeeName?: string;
 }
 
-// --- HELPERS VISUALES GLOBALES ---
-const getInitials = (name: string) => {
-    if (!name) return 'U';
-    const parts = name.trim().split(' ');
-    if (parts.length === 0) return 'U';
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
-const getAvatarGradient = (id: number) => {
-    const gradients = ['from-blue-500 to-indigo-600', 'from-emerald-400 to-teal-600', 'from-orange-400 to-rose-500', 'from-purple-500 to-fuchsia-600', 'from-cyan-400 to-blue-600'];
-    return gradients[id % gradients.length];
+type TicketDetailUser = {
+    iIdRol?: number | string;
+    roleId?: number | string;
+    ildRol?: number | string;
+    iIdUser?: number | string;
+    ildUser?: number | string;
+    idUser?: number | string;
+    sUser?: string;
+    employeeName?: string;
 };
 
 // --- HELPER PARA DETECTAR ENLACES (LINKIFY) ---
@@ -85,8 +86,7 @@ export const TicketDetail = () => {
   const navigate = useNavigate();
   
   // --- IDENTIDAD DEL USUARIO ACTUAL ---
-  const userString = localStorage.getItem('user');
-  const userObj = userString ? JSON.parse(userString) : {};
+  const userObj = getLocalStorageJSON<TicketDetailUser>('user', {});
   const userRole = Number(userObj.iIdRol || userObj.roleId || userObj.ildRol || 0);
   const currentUserId = Number(userObj.iIdUser || userObj.ildUser || userObj.idUser || 0);
   const currentUserName = userObj.sUser || userObj.employeeName || "Yo";
@@ -149,7 +149,7 @@ export const TicketDetail = () => {
   const fetchComments = async (taskId: number) => {
       try {
           const token = localStorage.getItem('token');
-          const res = await fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/TicketComments/${taskId}`, {
+          const res = await fetch(toApiUrl(`/TicketComments/${taskId}`), {
               headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {
@@ -176,24 +176,37 @@ export const TicketDetail = () => {
         const pComments = fetchComments(ticketId); 
 
         // Helper de Caché Temporal de la Sesión para los "Diccionarios" Gigantes
-        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
-            const cached = sessionStorage.getItem(key);
-            if (cached) return JSON.parse(cached);
+        const fetchCached = async <T,>(key: string, fetcher: () => Promise<T>) => {
+            const cached = getSessionStorageJSON<T | null>(key, null);
+            if (cached !== null) return cached;
+
             const data = await fetcher();
-            sessionStorage.setItem(key, JSON.stringify(data));
+            if (data !== undefined) {
+                sessionStorage.setItem(key, JSON.stringify(data));
+            } else {
+                sessionStorage.removeItem(key);
+            }
             return data;
         };
 
         const pStatuses = fetchCached('app_statuses', () => getStatuses());
         
         const pUsers = fetchCached('app_users', async () => {
-            const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers });
-            return res.ok ? await res.json() : [];
+            const res = await fetch(toApiUrl("/general/users"), { headers });
+            if (!res.ok) {
+                sessionStorage.removeItem("app_users");
+                return undefined;
+            }
+            return await res.json();
         });
 
         const pSupportUsers = fetchCached('app_support_users', async () => {
-            const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/support-users", { headers });
-            return res.ok ? await res.json() : [];
+            const res = await fetch(toApiUrl("/general/support-users"), { headers });
+            if (!res.ok) {
+                sessionStorage.removeItem("app_support_users");
+                return undefined;
+            }
+            return await res.json();
         });
 
         // Esperamos TODO en paralelo nativo (Ahorro enorme de milisegundos).
@@ -284,7 +297,7 @@ export const TicketDetail = () => {
     setIsAssigning(true);
     try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/tickets/${ticket.iIdTask}/assign`, {
+        const res = await fetch(toApiUrl(`/tickets/${ticket.iIdTask}/assign`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ iIdUserTarget: pendingAssignId })
@@ -422,7 +435,7 @@ export const TicketDetail = () => {
               formData.append("Images", file);
           });
 
-          const res = await fetch(`https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/TicketComments`, {
+          const res = await fetch(toApiUrl("/TicketComments"), {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
               body: formData
@@ -618,7 +631,7 @@ export const TicketDetail = () => {
                                                 transition={{ type: "spring", stiffness: 500, damping: 25 }}
                                                 onClick={handleAssignUser} 
                                                 disabled={isAssigning} 
-                                                className="relative flex items-center justify-center w-12 h-12 rounded-full bg-blue-600 text-white shadow-lg overflow-hidden shrink-0 hover:scale-105"
+                                                className="relative flex items-center justify-center w-12 h-12 min-w-12 min-h-12 aspect-square p-0 rounded-full bg-blue-600 text-white shadow-lg overflow-hidden shrink-0 hover:scale-105"
                                             >
                                                 {isAssigning ? (
                                                     <span className="material-symbols-rounded animate-spin text-xl">progress_activity</span>
@@ -654,7 +667,7 @@ export const TicketDetail = () => {
                                             transition={{ type: "spring", stiffness: 500, damping: 25 }}
                                             onClick={handleSaveStatus} 
                                             disabled={isSavingStatus} 
-                                            className="relative flex items-center justify-center w-12 h-12 rounded-full bg-black dark:bg-white text-white dark:text-black shadow-lg overflow-hidden shrink-0 hover:scale-105"
+                                            className="relative flex items-center justify-center w-12 h-12 min-w-12 min-h-12 aspect-square p-0 rounded-full bg-black dark:bg-white text-white dark:text-black shadow-lg overflow-hidden shrink-0 hover:scale-105"
                                         >
                                             {isSavingStatus ? (
                                                 <span className="material-symbols-rounded animate-spin text-xl">progress_activity</span>

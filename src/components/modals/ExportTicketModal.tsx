@@ -5,24 +5,13 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Ticket } from "../../services/ticketService";
+import { usePortalPos } from "../../hooks/usePortalPos";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   data: Ticket[];
 }
-
-// ─── UTILIDAD DE PORTAL PARA SELECT ──────────────────────────────────────────
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
-  };
-  return { triggerRef, pos, updatePos };
-};
 
 // ─── DROPDOWN PREMIUM ─────────────────────────────────────────────────────────
 const CustomDropdown = ({ value, onChange, options, placeholder }: {
@@ -32,7 +21,7 @@ const CustomDropdown = ({ value, onChange, options, placeholder }: {
   placeholder: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { triggerRef, pos, updatePos } = usePortalPos();
+  const { triggerRef, pos, updatePos } = usePortalPos<HTMLButtonElement>();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

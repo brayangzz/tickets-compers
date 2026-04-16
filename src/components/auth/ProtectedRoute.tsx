@@ -1,26 +1,30 @@
 import React from 'react';
 import { Navigate, Outlet } from "react-router-dom";
+import { clearAuthStoragePreserveTheme, getLocalStorageJSON } from "../../utils/storage";
 
 interface Props {
   allowedRoles?: string[]; 
 }
 
+type ProtectedUser = {
+  iIdRol?: number | string;
+  ildRol?: number | string;
+  idRole?: number | string;
+};
+
 export const ProtectedRoute = ({ allowedRoles }: Props) => {
   // 1. LEER DATOS CON LAS LLAVES CORRECTAS
   // Ahora usamos 'user' (que es lo que guarda el Login corregido)
-  const userString = localStorage.getItem('user');
-  const rolesMapString = localStorage.getItem('rolesMap');
   const token = localStorage.getItem('token');
 
-  const user = userString ? JSON.parse(userString) : null;
-  const rolesMap = rolesMapString ? JSON.parse(rolesMapString) : {};
+  const user = getLocalStorageJSON<ProtectedUser | null>('user', null);
+  const rolesMap = getLocalStorageJSON<Record<string, number>>('rolesMap', {});
 
   // 2. VERIFICACIÓN DE SESIÓN
   // Si no hay token o no hay datos de usuario, mandar al Login
   if (!token || !user) {
     // Limpieza de seguridad por si quedó basura a medias
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuthStoragePreserveTheme();
     return <Navigate to="/login" replace />;
   }
 

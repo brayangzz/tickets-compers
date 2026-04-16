@@ -5,6 +5,11 @@ import { Card } from "../components/ui/Card";
 import { createTicket, uploadTicketFile } from "../services/ticketService";
 import { getBranches, getDepartments, type Branch, type Department } from "../services/catalogService";
 import { motion, AnimatePresence } from "framer-motion";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { fetchCached } from "../utils/cache";
+import { usePortalPos } from "../hooks/usePortalPos";
+import { getLocalStorageJSON } from "../utils/storage";
+import { toApiUrl } from "../config/api";
 
 interface FileWithPreview {
   file: File;
@@ -40,18 +45,6 @@ const getIconForOption = (label: string, map: Record<string, string>): string =>
   return map.default || "circle";
 };
 
-// ─── Portal pos ────────────────────────────────────────────────────────────
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
-  };
-  return { triggerRef, pos, updatePos };
-};
-
 // ─── CustomSelect Premium (Con Ordenamiento, Búsqueda y Bloqueo) ─────────────
 const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasError = false, iconMap, disabled = false }: {
   name: string; value: number;
@@ -62,7 +55,7 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
   disabled?: boolean; // <-- Nueva propiedad
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { triggerRef, pos, updatePos } = usePortalPos();
+  const { triggerRef, pos, updatePos } = usePortalPos<HTMLDivElement>();
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -276,20 +269,11 @@ export const CreateTicket = () => {
         const token = localStorage.getItem('token');
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // Helper de caché para catálogos y directorio
-        const fetchCached = async (key: string, fetcher: () => Promise<any>) => {
-            const cached = sessionStorage.getItem(key);
-            if (cached) return JSON.parse(cached);
-            const data = await fetcher();
-            sessionStorage.setItem(key, JSON.stringify(data));
-            return data;
-        };
-
         const [branchesData, deptsData, usersList] = await Promise.all([
           fetchCached('app_branches', () => getBranches()), 
           fetchCached('app_departments', () => getDepartments()),
           fetchCached('app_users', async () => {
-              const res = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users", { headers });
+              const res = await fetch(toApiUrl("/general/users"), { headers });
               return res.ok ? await res.json() : [];
           })
         ]);
@@ -301,9 +285,12 @@ export const CreateTicket = () => {
         setDepartmentsList(dList);
 
         // LEER LOCALSTORAGE PARA SABER QUIÉN ESTÁ LOGUEADO
-        const userString = localStorage.getItem('user');
-        if (userString) {
-            const userObj = JSON.parse(userString);
+        const userObj = getLocalStorageJSON<{
+            iIdUser?: number | string;
+            ildUser?: number | string;
+            idUser?: number | string;
+        } | null>('user', null);
+        if (userObj) {
             const currentUserId = Number(userObj.iIdUser || userObj.ildUser || userObj.idUser || 0);
 
             if (currentUserId > 0 && Array.isArray(usersList)) {

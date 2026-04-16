@@ -7,6 +7,9 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { motion, AnimatePresence } from "framer-motion";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { usePortalPos } from "../hooks/usePortalPos";
+import { toApiUrl } from "../config/api";
 
 // Interfaces
 interface ApiUser {
@@ -24,25 +27,6 @@ interface ApiDepartment {
   iIdDepartment: number;
   sDepartment: string;
 }
-
-// --- Helpers de Avatar ---
-const getInitials = (name: string) => {
-  if (!name) return "U";
-  const parts = name.trim().split(" ");
-  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
-const getAvatarGradient = (id: number) => {
-  const gradients = [
-    "from-blue-500 to-indigo-600",
-    "from-emerald-400 to-teal-600",
-    "from-orange-400 to-rose-500",
-    "from-purple-500 to-fuchsia-600",
-    "from-cyan-400 to-blue-600",
-  ];
-  return gradients[id % gradients.length];
-};
 
 // --- Helpers de Iconos ---
 const getRoleIcon = (role: string) => {
@@ -63,24 +47,10 @@ const getDeptIcon = (dept: string) => {
   return "domain";
 };
 
-// ─── Utilidad para calcular posición del portal ───
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    setPos({ top: rect.bottom + window.scrollY + 8, left: rect.left + window.scrollX, width: rect.width });
-  };
-
-  return { triggerRef, pos, updatePos };
-};
-
 // ─── CustomSelect Premium ────────────────
 const CustomSelect = ({ value, onChange, options, placeholder, icon }: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { triggerRef, pos, updatePos } = usePortalPos();
+  const { triggerRef, pos, updatePos } = usePortalPos<HTMLButtonElement>();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find((o: any) => o.value === value);
 
@@ -218,24 +188,37 @@ export const Users = () => {
         // Helper de caché
         const fetchCached = async (key: string, url: string) => {
             const cached = sessionStorage.getItem(key);
-            if (cached) return JSON.parse(cached);
-            
-            const res = await fetch(url, { headers });
-            const data = await res.json();
-            
-            // Si la respuesta es exitosa y tiene datos, guardamos en caché
-            if (res.ok) {
-                // Acomodamos la data según como venga (array directo o dentro de result/data)
-                const finalData = Array.isArray(data) ? data : (data?.data || data?.result || []);
-                sessionStorage.setItem(key, JSON.stringify(finalData));
-                return finalData;
+            if (cached) {
+              try {
+                return JSON.parse(cached);
+              } catch {
+                sessionStorage.removeItem(key);
+              }
             }
-            return Array.isArray(data) ? data : (data?.data || data?.result || []);
+
+            const res = await fetch(url, { headers });
+            let data: unknown;
+
+            try {
+              data = await res.json();
+            } catch {
+              sessionStorage.removeItem(key);
+              return [];
+            }
+
+            const finalData = Array.isArray(data) ? data : ((data as any)?.data || (data as any)?.result || []);
+            if (!res.ok) {
+              sessionStorage.removeItem(key);
+              return finalData;
+            }
+
+            sessionStorage.setItem(key, JSON.stringify(finalData));
+            return finalData;
         };
 
         const [usersData, deptsData] = await Promise.all([
-           fetchCached('app_users', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/users"),
-           fetchCached('app_departments', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments")
+           fetchCached('app_users', toApiUrl("/general/users")),
+           fetchCached('app_departments', toApiUrl("/general/departments"))
         ]);
 
         setUsers(usersData);
@@ -377,7 +360,7 @@ export const Users = () => {
     setIsEditSubmitting(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/users/admin/change-password", {
+      const response = await fetch(toApiUrl("/users/admin/change-password"), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ sUser: userToEdit?.sUser, sNewPassword: newPassword }),
@@ -408,7 +391,7 @@ export const Users = () => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/users/admin/${userToDelete.iIdUser}`,
+        toApiUrl(`/users/admin/${userToDelete.iIdUser}`),
         { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error("Error al eliminar");
@@ -1249,4 +1232,5 @@ export const Users = () => {
       </AnimatePresence>
     </motion.div>
   );
-};
+};
+

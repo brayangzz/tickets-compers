@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { motion, AnimatePresence } from "framer-motion";
+import { getInitialsTwo, getAvatarGradient } from "../utils/user";
+import { fetchCachedUrl } from "../utils/cache";
+import { usePortalPos } from "../hooks/usePortalPos";
+import { toApiUrl } from "../config/api";
 
 interface Role { iIdRol: number; sRol: string; }
 interface Department { iIdDepartment: number; sDepartment: string; }
@@ -45,11 +49,7 @@ const getColorByLetter = (name: string) => {
   return LETTER_COLORS[letter] || DEFAULT_COLOR;
 };
 
-const getInitials = (name: string, lastName: string) => {
-  const a = name.trim().charAt(0) || '';
-  const b = lastName.trim().charAt(0) || '';
-  return (a + b).toUpperCase() || 'U';
-};
+// Use getInitialsTwo from utils/user.ts
 
 const ROLE_ICONS: Record<string, string> = {
   default: "shield_person",
@@ -90,18 +90,6 @@ const getIconForOption = (label: string, map: Record<string, string>): string =>
   return map.default;
 };
 
-// ─── Portal pos ────────────────────────────────────────────────────────────
-const usePortalPos = () => {
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const updatePos = () => {
-    if (!triggerRef.current) return;
-    const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + window.scrollY + 8, left: r.left + window.scrollX, width: r.width });
-  };
-  return { triggerRef, pos, updatePos };
-};
-
 // ─── CustomSelect ──────────────────────────────────────────────────────────
 const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasError = false, iconMap }: {
   name: string; value: number;
@@ -111,7 +99,7 @@ const CustomSelect = ({ name, value, onChange, options, placeholder, icon, hasEr
   iconMap?: Record<string, string>;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { triggerRef, pos, updatePos } = usePortalPos();
+  const { triggerRef, pos, updatePos } = usePortalPos<HTMLDivElement>();
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   // SOLUCIÓN A TS(2503): Tipar correctamente el ref del temporizador
@@ -552,7 +540,7 @@ export const CreateUser = () => {
     iIdUserCreate: CURRENT_USER_ID
   });
 
-  const initials = getInitials(formData.sName, formData.sLastName);
+  const initials = getInitialsTwo(formData.sName, formData.sLastName);
   const avatarColor = getColorByLetter(formData.sName || formData.sLastName);
 
   useEffect(() => {
@@ -568,19 +556,10 @@ export const CreateUser = () => {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const fetchCached = async (key: string, url: string) => {
-            const cached = sessionStorage.getItem(key);
-            if (cached) return JSON.parse(cached);
-            const res = await fetch(url);
-            const data = await res.json();
-            sessionStorage.setItem(key, JSON.stringify(data));
-            return data;
-        };
-
         const [r, d, b] = await Promise.all([
-          fetchCached('app_roles', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/roles"),
-          fetchCached('app_departments', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/departments"),
-          fetchCached('app_branches', "https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/general/branches")
+          fetchCachedUrl<Role[]>('app_roles', toApiUrl("/general/roles")),
+          fetchCachedUrl<Department[]>('app_departments', toApiUrl("/general/departments")),
+          fetchCachedUrl<Branch[]>('app_branches', toApiUrl("/general/branches"))
         ]);
         
         setRolesList(r);
@@ -650,7 +629,7 @@ export const CreateUser = () => {
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch("https://tickets-backend-api-gxbkf5enbafxcvb2.francecentral-01.azurewebsites.net/api/users/admin/register", {
+      const response = await fetch(toApiUrl("/users/admin/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(formData)

@@ -4,38 +4,13 @@ import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { getTickets, type Ticket } from "../services/ticketService";
 import { isSupportUser } from "../config/roles";
+import { getInitials, getAvatarGradient } from "../utils/user";
+import { getStatusConfig } from "../utils/status";
+import { useCountUp } from "../hooks/useCountUp";
 import { motion, AnimatePresence } from "framer-motion";
+import { getLocalStorageJSON } from "../utils/storage";
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
-const getInitials = (name: string) => {
-    if (!name) return "U";
-    const parts = name.trim().split(" ");
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
-const getAvatarGradient = (id: number) => {
-    const gradients = [
-        "from-blue-500 to-indigo-600",
-        "from-emerald-400 to-teal-600",
-        "from-orange-400 to-rose-500",
-        "from-purple-500 to-fuchsia-600",
-        "from-cyan-400 to-blue-600",
-    ];
-    return gradients[id % gradients.length];
-};
-
-const getStatusConfig = (id: number) => {
-    switch (id) {
-        case 1: return { label: "PENDIENTE",  className: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800/50",   dot: "bg-amber-500" };
-        case 2: return { label: "ABIERTO",    className: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/50",         dot: "bg-blue-500" };
-        case 3: return { label: "EN PROCESO", className: "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800/50", dot: "bg-indigo-500 animate-pulse" };
-        case 4: return { label: "COMPLETADO", className: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800/50", dot: "bg-emerald-500" };
-        case 5: return { label: "SOLUCIONADO", className: "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800/50",         dot: "bg-teal-500" };
-        case 6: return { label: "CANCELADO",  className: "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800/50",         dot: "bg-rose-500" };
-        default: return { label: "DESCONOCIDO", className: "bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700",                           dot: "bg-slate-400" };
-    }
-};
 
 const formatDateTime = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -53,46 +28,6 @@ const getGreeting = () => {
     if (h < 12) return "Buenos días";
     if (h < 18) return "Buenas tardes";
     return "Buenas noches";
-};
-
-// ─── HOOK: CONTADOR SUAVE (arranca inmediatamente, sin delay extra) ──────────
-const useCountUp = (target: number, duration = 900) => {
-    const [count, setCount] = useState(0);
-    const rafRef = useRef<number | null>(null);
-    const startTimeRef = useRef<number | null>(null);
-    const prevTarget = useRef<number>(0);
-
-    useEffect(() => {
-        // Cancelar cualquier animación previa
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        startTimeRef.current = null;
-        const from = prevTarget.current;
-        prevTarget.current = target;
-
-        if (target === from) return;
-
-        const step = (timestamp: number) => {
-            if (!startTimeRef.current) startTimeRef.current = timestamp;
-            const elapsed = timestamp - startTimeRef.current;
-            const progress = Math.min(elapsed / duration, 1);
-            // easeOutCubic – suave y rápida, sin el lag de easeOutExpo
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const current = Math.round(from + (target - from) * eased);
-            setCount(current);
-            if (progress < 1) {
-                rafRef.current = requestAnimationFrame(step);
-            } else {
-                setCount(target);
-            }
-        };
-        rafRef.current = requestAnimationFrame(step);
-
-        return () => {
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        };
-    }, [target, duration]);
-
-    return count;
 };
 
 // ─── COMPONENTE WIDGET KPI ──────────────────────────────────────────────────
@@ -196,11 +131,21 @@ const SkeletonRow = ({ i }: { i: number }) => (
 export const Dashboard = () => {
     const navigate = useNavigate();
 
+    type DashboardUser = {
+        iIdRol?: number | string;
+        ildRol?: number | string;
+        idRole?: number | string;
+        iIdUser?: number | string;
+        ildUser?: number | string;
+        idUser?: number | string;
+        sUser?: string;
+        employeeName?: string;
+    };
+
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const userString = localStorage.getItem("user");
-    const currentUser = userString ? JSON.parse(userString) : {};
+    const currentUser = getLocalStorageJSON<DashboardUser>("user", {});
     const currentRoleId = Number(currentUser.iIdRol || currentUser.ildRol || currentUser.idRole || 0);
     const currentUserId = Number(currentUser.iIdUser || currentUser.ildUser || currentUser.idUser || 0);
     const userName = currentUser.sUser || currentUser.employeeName || "Usuario";

@@ -1,182 +1,280 @@
 import React, { useMemo } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../hooks/useTheme";
+import {
+  clearAuthStoragePreserveTheme,
+  getLocalStorageJSON,
+} from "../../utils/storage";
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+const UserAvatar = ({ name }: { name: string }) => {
+  const initial = name.charAt(0).toUpperCase() || "U";
+  const gradients = [
+    "from-blue-500 to-indigo-600",
+    "from-violet-500 to-purple-600",
+    "from-emerald-400 to-teal-600",
+    "from-orange-400 to-rose-500",
+    "from-cyan-400 to-blue-600",
+    "from-fuchsia-500 to-pink-600",
+  ];
+  const idx = Math.abs((initial.charCodeAt(0) - 65) % gradients.length);
+  const gradient = gradients[idx];
+
+  return (
+    <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-extrabold text-base shadow-lg ring-2 ring-white/10 shrink-0`}>
+      {initial}
+    </div>
+  );
+};
+
+// ─── NavItem ──────────────────────────────────────────────────────────────────
+const NavItem = ({
+  to, icon, label, onClose, rotateIcon = false, exact = false,
+}: {
+  to: string; icon: string; label: string; onClose?: () => void; rotateIcon?: boolean; exact?: boolean;
+}) => (
+  <div className="mx-2">
+    <NavLink to={to} onClick={onClose} end={exact}>
+      {({ isActive }) => (
+        <motion.div
+          whileHover={!isActive ? { x: 3 } : {}}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+          className={cn(
+            "relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl cursor-pointer select-none overflow-hidden",
+            "transition-colors duration-200",
+            isActive
+              ? "bg-blue-600 text-white font-bold shadow-lg shadow-blue-500/20"
+              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] hover:text-slate-900 dark:hover:text-white font-semibold"
+          )}
+        >
+          {/* Brillo interior — solo CSS, sin layoutId para evitar bugs */}
+          {isActive && (
+            <span className="absolute inset-0 bg-gradient-to-r from-white/15 to-transparent pointer-events-none rounded-2xl" />
+          )}
+
+          {/* Ícono */}
+          <motion.span
+            animate={isActive ? { scale: 1.12, rotate: rotateIcon ? -6 : 0 } : { scale: 1, rotate: 0 }}
+            whileHover={!isActive ? { scale: 1.18, rotate: rotateIcon ? -8 : 0 } : {}}
+            whileTap={{ scale: 0.88 }}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+            className="material-symbols-rounded text-[22px] shrink-0 relative z-10"
+          >
+            {icon}
+          </motion.span>
+
+          {/* Label */}
+          <span className="text-[15px] tracking-wide flex-1 relative z-10">{label}</span>
+
+          {/* Chevron hover (solo inactivos) */}
+          {!isActive && (
+            <span className="material-symbols-rounded text-[15px] opacity-0 group-hover:opacity-40 transition-opacity duration-200 relative z-10">
+              chevron_right
+            </span>
+          )}
+        </motion.div>
+      )}
+    </NavLink>
+  </div>
+);
+
+// ─── SidebarContent ───────────────────────────────────────────────────────────
+type SidebarUser = {
+  sUser?: string;
+  iIdRol?: number | string;
+  ildRol?: number | string;
+  idRole?: number | string;
+};
 
 const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  // 1. LEER DATOS REALES
-  const userString = localStorage.getItem('user');
-  const rolesMapString = localStorage.getItem('rolesMap');
-  
-  const user = userString ? JSON.parse(userString) : {};
-  const rolesMap = rolesMapString ? JSON.parse(rolesMapString) : {};
+  const user = getLocalStorageJSON<SidebarUser>("user", {});
+  const rolesMap = getLocalStorageJSON<Record<string, number>>("rolesMap", {});
 
-  // 2. MAPEO DE PROPIEDADES
   const userName = user.sUser || "Invitado";
   const userRoleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
-
-  // 3. LÓGICA DE PERMISOS
   const PRIVILEGED_IDS = [32];
   const isPrivileged = PRIVILEGED_IDS.includes(userRoleId);
 
-  // 4. ROL BONITO
   const displayRole = useMemo(() => {
-      const foundName = Object.keys(rolesMap).find(key => rolesMap[key] === userRoleId);
-      if (foundName) {
-          return foundName.toLowerCase().replace(/(^\w{1})|(\s+\w{1})/g, l => l.toUpperCase());
-      }
-      if (isPrivileged) return "Soporte TI";
-      return "Colaborador";
+    const foundName = Object.keys(rolesMap).find(key => rolesMap[key] === userRoleId);
+    if (foundName) return foundName.toLowerCase().replace(/(^\w{1})|(\s+\w{1})/g, l => l.toUpperCase());
+    return isPrivileged ? "Soporte TI" : "Colaborador";
   }, [rolesMap, userRoleId, isPrivileged]);
 
-  // Usamos rounded-2xl para curvas suaves, scale para efecto "presión" y transiciones fluidas.
-  const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    cn(
-      "relative flex items-center gap-3.5 px-4 py-3.5 mx-3 rounded-2xl transition-all duration-300 group ease-out",
-      isActive
-        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02] font-semibold" // Estado Activo: Flota y brilla en azul
-        : "text-slate-500 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white hover:scale-[1.01]" // Estado Inactivo: Sutil
-    );
-
   const handleLogout = () => {
-    localStorage.clear();
+    clearAuthStoragePreserveTheme();
     navigate("/login", { replace: true });
   };
 
-  // --- COMPONENTES DE LINK (Para reusar y ordenar) ---
-  
-  const LinkTickets = (
-    <NavLink to="/tickets" className={navItemClass} onClick={onClose}>
-        {/* El icono rota ligeramente al hacer hover*/}
-        <span className="material-symbols-rounded text-[24px] transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6">confirmation_number</span>
-        <span className="text-[15px] tracking-wide">Tickets</span>
-        {/* Indicador sutil de flecha que aparece al hover */}
-        <span className="material-symbols-rounded text-lg ml-auto opacity-0 -translate-x-2 group-hover:opacity-50 group-hover:translate-x-0 transition-all duration-300">chevron_right</span>
-    </NavLink>
-  );
-
-  const LinkMisTareas = (
-    <NavLink to="/my-tasks" className={navItemClass} onClick={onClose}>
-        <span className="material-symbols-rounded text-[22px] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6">task_alt</span>
-        <span className="text-[15px] tracking-wide">Mis Tareas</span>
-    </NavLink>
-  );
-
   return (
-    // FONDO: Glassmorphism sutil (Backdrop Blur)
-    <div className="flex flex-col h-full bg-white/90 dark:bg-[#0f172a]/95 backdrop-blur-xl border-r border-slate-200/60 dark:border-slate-800/60 transition-colors duration-500">
-      
-      {/* HEADER: Logo Real */}
-      <div className="h-24 flex items-center justify-between px-8 shrink-0">
-        <div className="flex items-center group cursor-default">
-            {/* LOGO ADAPTATIVO: A color en modo claro, Blanco en modo oscuro */}
-            <img 
-                src="/logo.png" 
-                alt="Logo Compers" 
-                className="max-h-10 w-auto object-contain transition-transform duration-500 group-hover:scale-105 dark:brightness-0 dark:invert"
-            />
-        </div>
-        
+    <div className="flex flex-col h-full bg-white dark:bg-[#0d1526] border-r border-slate-200/70 dark:border-slate-800/60 transition-colors duration-300">
+
+      {/* HEADER */}
+      <div className="flex items-center justify-between px-6 py-5 shrink-0">
+        <motion.img
+          src="/logo.png"
+          alt="Logo Compers"
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          className="h-9 w-auto object-contain dark:brightness-0 dark:invert cursor-default"
+        />
+
         {onClose && (
-            <button onClick={onClose} className="lg:hidden p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
-                <span className="material-symbols-rounded text-slate-500">close</span>
-            </button>
+          <motion.button
+            whileHover={{ scale: 1.1, rotate: 90 }}
+            whileTap={{ scale: 0.88 }}
+            onClick={onClose}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+            className="lg:hidden w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            <span className="material-symbols-rounded text-[18px]">close</span>
+          </motion.button>
         )}
       </div>
 
-      {/* SEPARADOR SUTIL */}
-      <div className="h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-800 to-transparent mx-6 mb-4 opacity-50" />
+      {/* Separador */}
+      <div className="h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-700/60 to-transparent mx-5 mb-3" />
 
-      {/* MENU SCROLLABLE */}
-      <nav className="flex-1 py-2 flex flex-col gap-1.5 overflow-y-auto custom-scrollbar px-1">
-        
-        {/* Etiqueta de sección sutil */}
-        <div className="px-6 py-2">
-            <p className="text-[11px] font-bold text-slate-400/80 uppercase tracking-widest">Menu Principal</p>
-        </div>
-          
-        {/* 1. VISIBLE SOLO PARA PRIVILEGIADOS */}
+      {/* NAVEGACIÓN */}
+      <nav className="flex-1 py-2 flex flex-col gap-1 overflow-y-auto">
+        <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-6 pb-2 pt-1">
+          Menú Principal
+        </p>
+
+        {/* Items privilegiados: Dashboard usa exact=true */}
         {isPrivileged && (
-        <>
-            <NavLink to="/" className={navItemClass} onClick={onClose}>
-                <span className="material-symbols-rounded text-[24px] transition-transform duration-300 group-hover:scale-110">grid_view</span>
-                <span className="text-[15px] tracking-wide">Dashboard</span>
-            </NavLink>
-            
-            <NavLink to="/users" className={navItemClass} onClick={onClose}>
-                <span className="material-symbols-rounded text-[24px] transition-transform duration-300 group-hover:scale-110">group</span>
-                <span className="text-[15px] tracking-wide">Usuarios</span>
-            </NavLink>
-        </>
+          <>
+            <NavItem to="/"      icon="grid_view"          label="Dashboard" onClose={onClose} exact />
+            <NavItem to="/users" icon="group"               label="Usuarios"  onClose={onClose} />
+          </>
         )}
 
-        {/* 2. ORDENAMIENTO (Tu lógica original) */}
-        {!isPrivileged && LinkMisTareas}
-        {LinkTickets}
-        {isPrivileged && LinkMisTareas}
+        {!isPrivileged && (
+          <>
+            <NavItem to="/my-tasks" icon="task_alt"           label="Mis Tareas" onClose={onClose} rotateIcon />
+            <NavItem to="/calendar" icon="calendar_today"     label="Agenda"     onClose={onClose} rotateIcon />
+          </>
+        )}
 
+        <NavItem to="/tickets"    icon="confirmation_number" label="Tickets"   onClose={onClose} rotateIcon />
+
+        {isPrivileged && (
+          <>
+            <NavItem to="/my-tasks" icon="task_alt"           label="Mis Tareas" onClose={onClose} rotateIcon />
+            <NavItem to="/calendar" icon="calendar_today"     label="Agenda"     onClose={onClose} rotateIcon />
+          </>
+        )}
       </nav>
 
-      {/* FOOTER "ISLA" FLOTANTE */}
-      <div className="p-4 shrink-0">
-        {/* Tarjeta de Usuario */}
-        <div className="bg-slate-50/80 dark:bg-slate-800/40 backdrop-blur-md border border-slate-200/60 dark:border-slate-700/50 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-300 group">
-            
-            {/* Perfil */}
-            <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-200 to-slate-100 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300 border border-white/50 dark:border-white/10 shadow-inner">
-                    <span className="text-sm font-bold uppercase">{userName.charAt(0)}</span>
-                </div>
-                <div className="flex flex-col overflow-hidden">
-                    <p className="text-sm font-bold text-slate-800 dark:text-white truncate capitalize">{userName}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-medium">{displayRole}</p>
-                </div>
-            </div>
+      {/* FOOTER — card sin animación, solo botones */}
+      <div className="p-3 shrink-0">
+        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/50 rounded-[20px] p-3.5">
 
-            {/* Botones de Acción (Iconos limpios) */}
-            <div className="flex items-center gap-2">
-                <button 
-                    onClick={toggleTheme}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-blue-500/50 text-slate-600 dark:text-slate-400 hover:text-blue-500 transition-all text-xs font-bold shadow-sm"
-                >
-                    <span className="material-symbols-rounded text-base">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-                    {theme === 'dark' ? 'Claro' : 'Oscuro'}
-                </button>
-                <button 
-                    onClick={handleLogout}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-rose-500/50 text-slate-600 dark:text-slate-400 hover:text-rose-500 transition-all text-xs font-bold shadow-sm group/logout"
-                >
-                    <span className="material-symbols-rounded text-base group-hover/logout:-translate-x-0.5 transition-transform">logout</span>
-                    Salir
-                </button>
+          {/* Perfil */}
+          <div className="flex items-center gap-3 mb-3.5">
+            <UserAvatar name={userName} />
+            <div className="flex flex-col min-w-0 flex-1">
+              <p className="text-sm font-bold text-slate-800 dark:text-white truncate capitalize leading-tight">
+                {userName}
+              </p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate font-medium mt-0.5">
+                {displayRole}
+              </p>
             </div>
+          </div>
+
+          {/* Botones */}
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileHover={{ scale: 1.04, y: -1 }}
+              whileTap={{ scale: 0.94 }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
+              onClick={toggleTheme}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-[14px] bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-500/40 transition-colors text-xs font-bold shadow-sm"
+            >
+              <motion.span
+                key={theme}
+                initial={{ rotate: -90, opacity: 0, scale: 0.6 }}
+                animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                transition={{ type: "spring", stiffness: 320, damping: 22 }}
+                className="material-symbols-rounded text-[16px]"
+              >
+                {theme === "dark" ? "light_mode" : "dark_mode"}
+              </motion.span>
+              {theme === "dark" ? "Claro" : "Oscuro"}
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.04, y: -1 }}
+              whileTap={{ scale: 0.94 }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
+              onClick={handleLogout}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-[14px] bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-500/40 hover:bg-rose-50/50 dark:hover:bg-rose-500/5 transition-colors text-xs font-bold shadow-sm"
+            >
+              <motion.span
+                whileHover={{ x: -3 }}
+                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                className="material-symbols-rounded text-[16px]"
+              >
+                logout
+              </motion.span>
+              Salir
+            </motion.button>
+          </div>
         </div>
-        
-        {/* Versión sutil */}
-        <p className="text-[9px] text-center text-slate-400 dark:text-slate-600 mt-3 font-mono opacity-60">v2.4.0 CompersSys</p>
+
+        <p className="text-[9px] text-center text-slate-300 dark:text-slate-700 mt-2.5 font-mono tracking-widest">
+          v2.4.0 · CompersSys
+        </p>
       </div>
     </div>
   );
 };
 
-export const Sidebar = () => {
-  return (
-    <aside className="hidden lg:flex w-72 flex-col h-screen sticky top-0 z-30">
-      <SidebarContent />
-    </aside>
-  );
-};
+// ─── Sidebar Desktop ──────────────────────────────────────────────────────────
+export const Sidebar = () => (
+  <aside className="hidden lg:flex w-64 flex-col h-screen sticky top-0 z-30 shrink-0">
+    <SidebarContent />
+  </aside>
+);
 
-export const MobileSidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
-    return (
-        <>
-            <div className={cn("fixed inset-0 bg-black/60 z-40 lg:hidden transition-opacity duration-500 backdrop-blur-sm", isOpen ? "opacity-100" : "opacity-0 pointer-events-none")} onClick={onClose} />
-            <div className={cn("fixed inset-y-0 left-0 w-72 z-50 lg:hidden transition-transform duration-500 cubic-bezier(0.32, 0.72, 0, 1) shadow-2xl", isOpen ? "translate-x-0" : "-translate-x-full")}>
-                <SidebarContent onClose={onClose} />
-            </div>
-        </>
-    );
-};
+// ─── Sidebar Móvil ────────────────────────────────────────────────────────────
+export const MobileSidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+  <>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+        />
+      )}
+    </AnimatePresence>
+
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="drawer"
+          initial={{ x: "-100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "-100%" }}
+          transition={{ type: "spring", stiffness: 300, damping: 36 }}
+          className="fixed inset-y-0 left-0 w-64 z-50 lg:hidden shadow-2xl"
+        >
+          <SidebarContent onClose={onClose} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </>
+);

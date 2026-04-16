@@ -11,6 +11,10 @@ import {
 
 const originalFetch = window.fetch;
 let hasTriggeredSessionExpired = false;
+const isLocalhost =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const runtimeApiBaseUrl = isLocalhost ? API_BASE_URL : "/api";
 
 const markAsNoTranslate = (element: Element | null) => {
   if (!element) return;
@@ -58,8 +62,8 @@ const getRequestUrl = (input: RequestInfo | URL) => {
 
 const rewriteLegacyApiBase = (url: string) => {
   if (!url.startsWith(LEGACY_API_BASE_URL)) return url;
-  if (API_BASE_URL === LEGACY_API_BASE_URL) return url;
-  return `${API_BASE_URL}${url.slice(LEGACY_API_BASE_URL.length)}`;
+  if (runtimeApiBaseUrl === LEGACY_API_BASE_URL) return url;
+  return `${runtimeApiBaseUrl}${url.slice(LEGACY_API_BASE_URL.length)}`;
 };
 
 const rewriteRequestInput = (input: RequestInfo | URL, rewrittenUrl: string) => {

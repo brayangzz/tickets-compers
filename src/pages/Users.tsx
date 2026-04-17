@@ -509,10 +509,19 @@ export const Users = () => {
         </div>
 
         {/* Filtros + Reset */}
-        <div className="flex gap-2 w-full lg:w-auto shrink-0">
+        <motion.div
+          layout
+          transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+          className="flex gap-2 w-full lg:w-auto shrink-0"
+        >
 
           {/* Filtro Rol - SE AÑADIÓ min-w-0 */}
-          <div className="relative flex-1 min-w-0 lg:flex-none" ref={roleRef}>
+          <motion.div
+            layout="position"
+            transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+            className="relative flex-1 min-w-0 lg:flex-none"
+            ref={roleRef}
+          >
             <motion.button
               type="button"
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -540,10 +549,15 @@ export const Users = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
           {/* Filtro Departamento - SE AÑADIÓ min-w-0 */}
-          <div className="relative flex-1 min-w-0 lg:flex-none" ref={deptRef}>
+          <motion.div
+            layout="position"
+            transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+            className="relative flex-1 min-w-0 lg:flex-none"
+            ref={deptRef}
+          >
             <motion.button
               type="button"
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -571,26 +585,33 @@ export const Users = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
-          {/* Reset animado */}
-          <AnimatePresence>
+          {/* Reset animado: al ocultarse, los filtros se deslizan suave sin salto */}
+          <AnimatePresence initial={false} mode="popLayout">
             {(searchTerm !== "" || selectedRole !== "all" || selectedDept !== "all") && (
               <motion.button
-                initial={{ opacity: 0, scale: 0.5, width: 0, marginLeft: 0 }}
-                animate={{ opacity: 1, scale: 1, width: 48, marginLeft: 8 }}
-                exit={{ opacity: 0, scale: 0.5, width: 0, marginLeft: 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                key="users-reset-filters"
+                layout
+                initial={{ opacity: 0, scale: 0.88, x: 8 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.88, x: 8 }}
+                transition={{
+                  duration: 0.2,
+                  ease: [0.22, 1, 0.36, 1],
+                  layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
+                }}
                 onClick={() => { setSearchTerm(""); setSelectedRole("all"); setSelectedDept("all"); }}
-                whileHover={{ scale: 1.05, rotate: 180 }} whileTap={{ scale: 0.95 }}
-                className="w-12 h-12 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-full border border-rose-200 dark:border-rose-500/30 text-rose-500 dark:text-rose-400 transition-colors shrink-0 overflow-hidden"
+                whileHover={{ scale: 1.05, rotate: 180 }}
+                whileTap={{ scale: 0.95 }}
+                className="w-12 h-12 min-w-12 min-h-12 aspect-square p-0 flex-none flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-full border border-rose-200 dark:border-rose-500/30 text-rose-500 dark:text-rose-400 transition-colors overflow-hidden"
                 title="Limpiar filtros"
               >
-                <span className="material-symbols-rounded text-[20px]">filter_alt_off</span>
+                <span className="material-symbols-rounded text-[20px] leading-none">filter_alt_off</span>
               </motion.button>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
       </motion.div>
 
       {/* TABLA CON STAGGER DIRECTO (EFECTO CASCADA SEGURO) */}

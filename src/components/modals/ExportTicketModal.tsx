@@ -343,4 +343,4 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
       </div>
     </div>
   );
-};
+};  

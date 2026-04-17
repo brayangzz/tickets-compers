@@ -148,12 +148,21 @@ export const Tickets = () => {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.4 }}
-      className="flex flex-col gap-8 w-full max-w-[1600px] mx-auto pb-12 font-display text-txt-main"
-    >
+    <>
+      <style>{`
+        /* Evita layout shift en Gestión de Tickets:
+           1) reserva espacio de scrollbar siempre
+           2) oculta visualmente la barra vertical */
+        html { overflow-y: scroll; scrollbar-gutter: stable; }
+        html, body { -ms-overflow-style: none; scrollbar-width: none; }
+        html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+      `}</style>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+        className="flex flex-col gap-8 w-full max-w-[1600px] mx-auto pb-12 font-display text-txt-main"
+      >
       {/* HEADER */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
@@ -222,9 +231,18 @@ export const Tickets = () => {
         </div>
 
         {/* Filtros + Reset (Responsivos) */}
-        <div className="flex gap-2 w-full lg:w-auto shrink-0">
+        <motion.div
+          layout
+          transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+          className="flex gap-2 w-full lg:w-auto shrink-0"
+        >
           {/* Filtro Estatus - SE AÑADIÓ min-w-0 */}
-          <div className="relative flex-1 min-w-0 lg:flex-none" ref={statusRef}>
+          <motion.div
+            layout="position"
+            transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+            className="relative flex-1 min-w-0 lg:flex-none"
+            ref={statusRef}
+          >
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={() => setIsStatusOpen(!isStatusOpen)}
@@ -255,10 +273,15 @@ export const Tickets = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
           {/* Filtro Sucursal - SE AÑADIÓ min-w-0 */}
-          <div className="relative flex-1 min-w-0 lg:flex-none" ref={branchRef}>
+          <motion.div
+            layout="position"
+            transition={{ layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+            className="relative flex-1 min-w-0 lg:flex-none"
+            ref={branchRef}
+          >
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={() => setIsBranchOpen(!isBranchOpen)}
@@ -285,24 +308,39 @@ export const Tickets = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
-          {/* Reset */}
-          <motion.button
-            onClick={() => { setSearchTerm(""); setFilterStatus("all"); setFilterBranch("all"); setFilterDate("desc"); }}
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            className="w-12 h-12 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 transition-colors shrink-0"
-            title="Reiniciar filtros"
-          >
-            <span className="material-symbols-rounded text-[20px]">restart_alt</span>
-          </motion.button>
-        </div>
+          {/* Reset animado: al ocultarse, los filtros se deslizan suave sin salto */}
+          <AnimatePresence initial={false} mode="popLayout">
+            {(searchTerm !== "" || filterStatus !== "all" || filterBranch !== "all" || filterDate !== "desc") && (
+              <motion.button
+                key="tickets-reset-filters"
+                layout
+                initial={{ opacity: 0, scale: 0.88, x: 8 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.88, x: 8 }}
+                transition={{
+                  duration: 0.2,
+                  ease: [0.22, 1, 0.36, 1],
+                  layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
+                }}
+                onClick={() => { setSearchTerm(""); setFilterStatus("all"); setFilterBranch("all"); setFilterDate("desc"); }}
+                whileHover={{ scale: 1.05, rotate: 180 }}
+                whileTap={{ scale: 0.95 }}
+                className="w-12 h-12 min-w-12 min-h-12 aspect-square p-0 flex-none flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-full border border-rose-200 dark:border-rose-500/30 text-rose-500 dark:text-rose-400 transition-colors overflow-hidden"
+                title="Limpiar filtros"
+              >
+                <span className="material-symbols-rounded text-[20px] leading-none">filter_alt_off</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </motion.div>
 
       {/* TABLA PRINCIPAL */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}>
         <Card className="overflow-hidden shadow-xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 rounded-[24px] p-0">
-          <div className="overflow-x-auto min-h-[400px]">
+          <div className="overflow-x-auto overflow-y-hidden min-h-[400px] hide-scrollbar [scrollbar-gutter:stable]">
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold bg-slate-50/50 dark:bg-[#0f172a]/30">
@@ -500,6 +538,7 @@ export const Tickets = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+      </motion.div>
+    </>
   );
 };

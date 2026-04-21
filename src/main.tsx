@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import "@fontsource/material-symbols-rounded/400.css";
+import materialSymbolsRoundedWoff2Url from "@fontsource/material-symbols-rounded/files/material-symbols-rounded-latin-400-normal.woff2?url";
 import { API_BASE_URL, LEGACY_API_BASE_URL } from "./config/api";
 import { router } from "./router";
 import "./index.css";
@@ -18,42 +19,71 @@ const isLocalhost =
 const runtimeApiBaseUrl = isLocalhost ? API_BASE_URL : "/api";
 const ICON_SELECTOR = ".material-symbols-rounded";
 const MATERIAL_SYMBOLS_PENDING_CLASS = "ms-icons-pending";
+const MATERIAL_SYMBOLS_FONT_DESCRIPTOR = '24px "Material Symbols Rounded"';
+const MATERIAL_SYMBOLS_PROBE_TOKEN = "arrow_forward";
+
+const preloadMaterialSymbols = () => {
+  const existingPreload = document.querySelector('link[data-ms-font-preload="true"]');
+  if (existingPreload) return;
+
+  const link = document.createElement("link");
+  link.rel = "preload";
+  link.as = "font";
+  link.type = "font/woff2";
+  link.crossOrigin = "anonymous";
+  link.href = materialSymbolsRoundedWoff2Url;
+  link.dataset.msFontPreload = "true";
+  document.head.appendChild(link);
+};
 
 const markMaterialSymbolsReady = () => {
   const root = document.documentElement;
   const clearPending = () => root.classList.remove(MATERIAL_SYMBOLS_PENDING_CLASS);
+  const isFontReady = () =>
+    document.fonts.check(MATERIAL_SYMBOLS_FONT_DESCRIPTOR, MATERIAL_SYMBOLS_PROBE_TOKEN);
 
   if (!("fonts" in document)) {
     clearPending();
     return;
   }
 
-  if (document.fonts.check('24px "Material Symbols Rounded"')) {
+  if (isFontReady()) {
     clearPending();
     return;
   }
 
-  const timeoutId = window.setTimeout(() => {
-    clearPending();
-  }, 6000);
+  const probe = document.createElement("span");
+  probe.className = "material-symbols-rounded";
+  probe.textContent = MATERIAL_SYMBOLS_PROBE_TOKEN;
+  probe.setAttribute("aria-hidden", "true");
+  probe.style.position = "fixed";
+  probe.style.left = "-9999px";
+  probe.style.top = "-9999px";
+  probe.style.opacity = "0";
+  probe.style.pointerEvents = "none";
+  document.body.appendChild(probe);
 
-  const onFontReady = () => {
-    window.clearTimeout(timeoutId);
+  const cleanup = () => {
+    window.clearInterval(pollIntervalId);
+    document.fonts.removeEventListener("loadingdone", checkAndFinish);
+    document.fonts.removeEventListener("loadingerror", checkAndFinish);
+    probe.remove();
+  };
+
+  const checkAndFinish = () => {
+    if (!isFontReady()) return;
+    cleanup();
     clearPending();
   };
 
+  document.fonts.addEventListener("loadingdone", checkAndFinish);
+  document.fonts.addEventListener("loadingerror", checkAndFinish);
   document.fonts
-    .load('24px "Material Symbols Rounded"')
-    .then(onFontReady)
+    .load(MATERIAL_SYMBOLS_FONT_DESCRIPTOR, MATERIAL_SYMBOLS_PROBE_TOKEN)
+    .then(checkAndFinish)
     .catch(() => {});
 
-  document.fonts.ready
-    .then(() => {
-      if (document.fonts.check('24px "Material Symbols Rounded"')) {
-        onFontReady();
-      }
-    })
-    .catch(() => {});
+  const pollIntervalId = window.setInterval(checkAndFinish, 250);
 };
 
 const markAsNoTranslate = (element: Element | null) => {
@@ -202,6 +232,7 @@ const rewriteRequestInput = (input: RequestInfo | URL, rewrittenUrl: string) => 
 };
 
 protectFromAutoTranslate();
+preloadMaterialSymbols();
 markMaterialSymbolsReady();
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

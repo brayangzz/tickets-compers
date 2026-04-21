@@ -4,6 +4,7 @@ import { loginUser } from "../services/authService";
 import { getRoles } from "../services/roleService";
 import { motion, AnimatePresence } from "framer-motion";
 import { getLocalStorageJSON } from "../utils/storage";
+import { prefetchPostLoginRoutes } from "../utils/routePrefetch";
 
 type LoginUser = {
   iIdRol?: number | string;
@@ -19,6 +20,7 @@ export const Login = () => {
     const user = getLocalStorageJSON<LoginUser | null>("user", null);
     if (token && user) {
       const roleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
+      prefetchPostLoginRoutes(roleId);
       navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
     }
   }, [navigate]);
@@ -72,6 +74,7 @@ export const Login = () => {
       localStorage.setItem("user", JSON.stringify(result));
       localStorage.setItem("isAuthenticated", "true");
       const roleId = Number(result.iIdRol || result.ildRol || result.idRole || 0);
+      prefetchPostLoginRoutes(roleId);
       navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
     } catch {
       setErrorMessage("Usuario o contraseña incorrectos.");

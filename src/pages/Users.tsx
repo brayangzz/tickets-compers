@@ -5,11 +5,10 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
 import { motion, AnimatePresence } from "framer-motion";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { getInitials, getAvatarGradient } from "../utils/user";
 import { usePortalPos } from "../hooks/usePortalPos";
 import { toApiUrl } from "../config/api";
+import { fetchCachedUrl } from "../utils/cache";
 
 // Interfaces
 interface ApiUser {
@@ -27,6 +26,16 @@ interface ApiDepartment {
   iIdDepartment: number;
   sDepartment: string;
 }
+
+const normalizeArrayResponse = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object") {
+    const maybeData = (value as { data?: unknown; result?: unknown });
+    if (Array.isArray(maybeData.data)) return maybeData.data as T[];
+    if (Array.isArray(maybeData.result)) return maybeData.result as T[];
+  }
+  return [];
+};
 
 // --- Helpers de Iconos ---
 const getRoleIcon = (role: string) => {
@@ -184,46 +193,13 @@ export const Users = () => {
       try {
         const token = localStorage.getItem('token');
         const headers = token ? { "Authorization": `Bearer ${token}` } : undefined;
-
-        // Helper de caché
-        const fetchCached = async (key: string, url: string) => {
-            const cached = sessionStorage.getItem(key);
-            if (cached) {
-              try {
-                return JSON.parse(cached);
-              } catch {
-                sessionStorage.removeItem(key);
-              }
-            }
-
-            const res = await fetch(url, { headers });
-            let data: unknown;
-
-            try {
-              data = await res.json();
-            } catch {
-              sessionStorage.removeItem(key);
-              return [];
-            }
-
-            const finalData = Array.isArray(data) ? data : ((data as any)?.data || (data as any)?.result || []);
-            if (!res.ok) {
-              sessionStorage.removeItem(key);
-              return finalData;
-            }
-
-            sessionStorage.setItem(key, JSON.stringify(finalData));
-            return finalData;
-        };
-
-        const [usersData, deptsData] = await Promise.all([
-           fetchCached('app_users', toApiUrl("/general/users")),
-           fetchCached('app_departments', toApiUrl("/general/departments"))
+        const [usersResponse, departmentsResponse] = await Promise.all([
+           fetchCachedUrl<unknown>('app_users', toApiUrl("/general/users"), headers),
+           fetchCachedUrl<unknown>('app_departments', toApiUrl("/general/departments"), headers)
         ]);
 
-        setUsers(usersData);
-        setDepartments(deptsData);
-
+        setUsers(normalizeArrayResponse<ApiUser>(usersResponse));
+        setDepartments(normalizeArrayResponse<ApiDepartment>(departmentsResponse));
       } catch (error) {
         console.error("Error al cargar datos:", error);
       } finally {
@@ -251,10 +227,12 @@ export const Users = () => {
   // Usuarios filtrados para la tabla principal
   const filteredUsers = useMemo(() => {
     if (!Array.isArray(users)) return [];
+    const searchLower = searchTerm.toLowerCase();
+
     return users.filter((user) => {
       const matchSearch =
-        (user.employeeName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-        (user.sUser?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+        (user.employeeName?.toLowerCase() || "").includes(searchLower) ||
+        (user.sUser?.toLowerCase() || "").includes(searchLower);
       const matchRole = selectedRole === "all" || user.roleName === selectedRole;
       const matchDept = selectedDept === "all" || user.departmentName === selectedDept;
       return matchSearch && matchRole && matchDept;
@@ -286,11 +264,11 @@ export const Users = () => {
   }, [users, exportRoleFilter, exportDeptFilter]);
 
   // --- LÓGICA DE EXPORTACIÓN ---
-  const handleExportSubmit = () => {
+  const handleExportSubmit = async () => {
     if (!selectedExportFormat || usersToExport.length === 0) return;
     setIsExporting(true);
 
-    setTimeout(() => {
+    try {
       const dateStr = new Date().toISOString().split("T")[0];
 
       if (selectedExportFormat === "excel") {
@@ -313,8 +291,13 @@ export const Users = () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
 
       } else if (selectedExportFormat === "pdf") {
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+          import("jspdf"),
+          import("jspdf-autotable"),
+        ]);
         const doc = new jsPDF();
 
         doc.setFontSize(18);
@@ -343,11 +326,11 @@ export const Users = () => {
 
         doc.save(`Directorio_Usuarios_${dateStr}.pdf`);
       }
-
+    } finally {
       setIsExporting(false);
       setIsExportModalOpen(false);
       setSelectedExportFormat(null);
-    }, 800);
+    }
   };
 
   // Cambiar contraseña

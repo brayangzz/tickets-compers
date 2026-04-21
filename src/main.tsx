@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
+import "@fontsource/material-symbols-rounded/400.css";
 import { API_BASE_URL, LEGACY_API_BASE_URL } from "./config/api";
 import { router } from "./router";
 import "./index.css";
@@ -15,11 +16,54 @@ const isLocalhost =
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1";
 const runtimeApiBaseUrl = isLocalhost ? API_BASE_URL : "/api";
+const ICON_SELECTOR = ".material-symbols-rounded";
+const MATERIAL_SYMBOLS_PENDING_CLASS = "ms-icons-pending";
+
+const markMaterialSymbolsReady = () => {
+  const root = document.documentElement;
+  const clearPending = () => root.classList.remove(MATERIAL_SYMBOLS_PENDING_CLASS);
+
+  if (!("fonts" in document)) {
+    clearPending();
+    return;
+  }
+
+  if (document.fonts.check('24px "Material Symbols Rounded"')) {
+    clearPending();
+    return;
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    clearPending();
+  }, 6000);
+
+  const onFontReady = () => {
+    window.clearTimeout(timeoutId);
+    clearPending();
+  };
+
+  document.fonts
+    .load('24px "Material Symbols Rounded"')
+    .then(onFontReady)
+    .catch(() => {});
+
+  document.fonts.ready
+    .then(() => {
+      if (document.fonts.check('24px "Material Symbols Rounded"')) {
+        onFontReady();
+      }
+    })
+    .catch(() => {});
+};
 
 const markAsNoTranslate = (element: Element | null) => {
   if (!element) return;
-  element.setAttribute("translate", "no");
-  element.classList.add("notranslate");
+  if (element.getAttribute("translate") !== "no") {
+    element.setAttribute("translate", "no");
+  }
+  if (!element.classList.contains("notranslate")) {
+    element.classList.add("notranslate");
+  }
 };
 
 const protectFromAutoTranslate = () => {
@@ -27,14 +71,46 @@ const protectFromAutoTranslate = () => {
   markAsNoTranslate(document.body);
   markAsNoTranslate(document.getElementById("root"));
 
+  const normalizeText = (value: string | null | undefined) =>
+    (value ?? "").replace(/\s+/g, " ").trim();
+
+  const isMaterialIconToken = (value: string) => /^[a-z0-9_]+$/i.test(value);
+
+  const rememberIconToken = (icon: Element) => {
+    if (!(icon instanceof HTMLElement)) return;
+    const currentText = normalizeText(icon.textContent);
+    const savedToken = normalizeText(icon.dataset.iconToken);
+
+    if (!savedToken && isMaterialIconToken(currentText)) {
+      icon.dataset.iconToken = currentText;
+    }
+  };
+
+  const restoreIconToken = (icon: Element) => {
+    if (!(icon instanceof HTMLElement)) return;
+    const savedToken = normalizeText(icon.dataset.iconToken);
+    if (!savedToken) return;
+
+    const currentText = normalizeText(icon.textContent);
+    if (currentText !== savedToken) {
+      icon.textContent = savedToken;
+    }
+  };
+
+  const protectIcon = (icon: Element) => {
+    markAsNoTranslate(icon);
+    rememberIconToken(icon);
+    restoreIconToken(icon);
+  };
+
   const protectIcons = (scope: ParentNode) => {
-    if (scope instanceof Element && scope.matches(".material-symbols-rounded")) {
-      markAsNoTranslate(scope);
+    if (scope instanceof Element && scope.matches(ICON_SELECTOR)) {
+      protectIcon(scope);
     }
 
     if ("querySelectorAll" in scope) {
-      scope.querySelectorAll(".material-symbols-rounded").forEach((icon) => {
-        markAsNoTranslate(icon);
+      scope.querySelectorAll(ICON_SELECTOR).forEach((icon) => {
+        protectIcon(icon);
       });
     }
   };
@@ -43,15 +119,65 @@ const protectFromAutoTranslate = () => {
 
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (node instanceof Element) {
-          protectIcons(node);
+      if (mutation.type === "childList") {
+        mutation.addedNodes.forEach((node) => {
+          if (node instanceof Element) {
+            protectIcons(node);
+          }
+        });
+
+        if (mutation.target instanceof Element) {
+          const iconContainer = mutation.target.closest(ICON_SELECTOR);
+          if (iconContainer) {
+            if (iconContainer instanceof HTMLElement && !normalizeText(iconContainer.dataset.iconToken)) {
+              mutation.removedNodes.forEach((removedNode) => {
+                const removedText = normalizeText(removedNode.textContent);
+                if (!normalizeText(iconContainer.dataset.iconToken) && isMaterialIconToken(removedText)) {
+                  iconContainer.dataset.iconToken = removedText;
+                }
+              });
+            }
+            protectIcon(iconContainer);
+          }
         }
-      });
+      }
+
+      if (mutation.type === "characterData") {
+        const parentIcon = mutation.target.parentElement?.closest(ICON_SELECTOR);
+        if (parentIcon) {
+          if (parentIcon instanceof HTMLElement && !normalizeText(parentIcon.dataset.iconToken)) {
+            const previousText = normalizeText(mutation.oldValue);
+            if (isMaterialIconToken(previousText)) {
+              parentIcon.dataset.iconToken = previousText;
+            }
+          }
+          protectIcon(parentIcon);
+        }
+      }
+
+      if (mutation.type === "attributes" && mutation.target instanceof Element) {
+        if (
+          mutation.target === document.documentElement ||
+          mutation.target === document.body ||
+          mutation.target.id === "root"
+        ) {
+          markAsNoTranslate(mutation.target);
+        }
+      }
     });
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    characterDataOldValue: true,
+  });
+
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "translate"],
+  });
 };
 
 const getRequestUrl = (input: RequestInfo | URL) => {
@@ -76,6 +202,7 @@ const rewriteRequestInput = (input: RequestInfo | URL, rewrittenUrl: string) => 
 };
 
 protectFromAutoTranslate();
+markMaterialSymbolsReady();
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const originalUrl = getRequestUrl(input);

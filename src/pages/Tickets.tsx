@@ -111,11 +111,12 @@ export const Tickets = () => {
 
   // --- FILTRADO Y ORDENAMIENTO ---
   const filteredData = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+
     return tickets
       .filter((t) => {
         const matchBranch = filterBranch === "all" || t.branchId === Number(filterBranch);
         const matchStatus = filterStatus === "all" || t.iIdStatus === Number(filterStatus);
-        const searchLower = searchTerm.toLowerCase();
         const matchSearch =
           (t.sName && t.sName.toLowerCase().includes(searchLower)) ||
           (t.sDescription && t.sDescription.toLowerCase().includes(searchLower)) ||

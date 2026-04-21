@@ -1,9 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import * as XLSX from "xlsx";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import type { Ticket } from "../../services/ticketService";
 import { usePortalPos } from "../../hooks/usePortalPos";
 
@@ -133,16 +130,18 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
   const years  = [new Date().getFullYear(), new Date().getFullYear() - 1];
   const months = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-  const getFilteredData = () =>
+  const filteredTickets = useMemo(() => (
     data.filter(t => {
       const dateStr = t.dDateUserCreate || t.dTaskStartDate;
       if (!dateStr) return false;
       const d = new Date(dateStr);
       return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear &&
         (selectedStatus === "Todos" || t.statusName === selectedStatus);
-    });
+    })
+  ), [data, selectedMonth, selectedYear, selectedStatus]);
 
-  const exportToExcel = (tickets: Ticket[]) => {
+  const exportToExcel = async (tickets: Ticket[]) => {
+    const XLSX = await import("xlsx");
     const rows = tickets.map(t => ({
       ID: t.iIdTask,
       Descripción: t.sDescription,
@@ -159,7 +158,11 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
     XLSX.writeFile(wb, `Reporte_Tickets_${months[selectedMonth]}_${selectedYear}.xlsx`);
   };
 
-  const exportToPDF = (tickets: Ticket[]) => {
+  const exportToPDF = async (tickets: Ticket[]) => {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text(`Reporte de Tickets - ${months[selectedMonth]} ${selectedYear}`, 14, 20);
@@ -184,19 +187,17 @@ export const ExportTicketModal = ({ isOpen, onClose, data }: Props) => {
 
   const handleExport = async () => {
     setIsExporting(true);
-    await new Promise(resolve => setTimeout(resolve, 700));
-    const filtered = getFilteredData();
-    if (filtered.length === 0) {
+    try {
+      if (filteredTickets.length === 0) return;
+      if (format === "excel") await exportToExcel(filteredTickets);
+      else await exportToPDF(filteredTickets);
+      onClose();
+    } finally {
       setIsExporting(false);
-      return;
     }
-    if (format === "excel") exportToExcel(filtered);
-    else exportToPDF(filtered);
-    setIsExporting(false);
-    onClose();
   };
 
-  const filteredCount = getFilteredData().length;
+  const filteredCount = filteredTickets.length;
 
   const monthOptions  = months.map((m, i) => ({ id: i, label: m }));
   const yearOptions   = years.map(y => ({ id: y, label: String(y) }));

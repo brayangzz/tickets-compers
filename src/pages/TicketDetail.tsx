@@ -3,13 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Skeleton } from "../components/ui/Skeleton";
-import { getTicketById, getTicketFiles, updateTicket, type Ticket } from "../services/ticketService";
+import { getTicketById, getTicketFiles, invalidateTicketsCache, updateTicket, type Ticket } from "../services/ticketService";
 import { getStatuses, type Status } from "../services/catalogService";
 import { motion, AnimatePresence } from "framer-motion";
 import { getInitials, getAvatarGradient } from "../utils/user";
 import { getStatusConfig } from "../utils/status";
-import { getLocalStorageJSON, getSessionStorageJSON } from "../utils/storage";
+import { getLocalStorageJSON } from "../utils/storage";
 import { toApiUrl } from "../config/api";
+import { fetchCached, fetchCachedUrl } from "../utils/cache";
 
 // --- INTERFACES ---
 interface ApiComment {
@@ -81,6 +82,16 @@ const linkifyText = (text: string) => {
     });
 };
 
+const normalizeArrayResponse = <T,>(value: unknown): T[] => {
+    if (Array.isArray(value)) return value as T[];
+    if (value && typeof value === "object") {
+        const maybeData = (value as { data?: unknown; result?: unknown });
+        if (Array.isArray(maybeData.data)) return maybeData.data as T[];
+        if (Array.isArray(maybeData.result)) return maybeData.result as T[];
+    }
+    return [];
+};
+
 export const TicketDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -132,6 +143,37 @@ export const TicketDetail = () => {
   
   // REFERENCIA PARA SCROLL
   const commentsScrollRef = useRef<HTMLDivElement>(null);
+  const ticketRef = useRef<Ticket | null>(null);
+  const assignedUserIdRef = useRef(0);
+  const hasChangesRef = useRef(false);
+  const hasAssignChangesRef = useRef(false);
+  const commentsPollingInFlightRef = useRef(false);
+  const statusPollingInFlightRef = useRef(false);
+
+  useEffect(() => { ticketRef.current = ticket; }, [ticket]);
+  useEffect(() => { assignedUserIdRef.current = assignedUserId; }, [assignedUserId]);
+  useEffect(() => { hasChangesRef.current = hasChanges; }, [hasChanges]);
+  useEffect(() => { hasAssignChangesRef.current = hasAssignChanges; }, [hasAssignChanges]);
+
+  const usersById = useMemo(() => {
+      const map = new Map<number, ApiUser>();
+      usersList.forEach((user) => {
+          if (typeof user.iIdUser === "number") map.set(user.iIdUser, user);
+          if (typeof user.ildUser === "number") map.set(user.ildUser, user);
+      });
+      return map;
+  }, [usersList]);
+
+  const commentImagePreviews = useMemo(
+      () => commentImages.map((file, index) => ({ index, url: URL.createObjectURL(file) })),
+      [commentImages],
+  );
+
+  useEffect(() => {
+      return () => {
+          commentImagePreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
+      };
+  }, [commentImagePreviews]);
 
   // --- FUNCION AUXILIAR DE SCROLL FORZADO ---
   const scrollToBottom = () => {
@@ -173,41 +215,12 @@ export const TicketDetail = () => {
         const pTicket = getTicketById(ticketId);
         const pFiles = getTicketFiles(ticketId);
         // Eliminamos el waterfall. Iniciamos la descarga de comentarios simultáneamente.
-        const pComments = fetchComments(ticketId); 
+        void fetchComments(ticketId);
 
         // Helper de Caché Temporal de la Sesión para los "Diccionarios" Gigantes
-        const fetchCached = async <T,>(key: string, fetcher: () => Promise<T>) => {
-            const cached = getSessionStorageJSON<T | null>(key, null);
-            if (cached !== null) return cached;
-
-            const data = await fetcher();
-            if (data !== undefined) {
-                sessionStorage.setItem(key, JSON.stringify(data));
-            } else {
-                sessionStorage.removeItem(key);
-            }
-            return data;
-        };
-
         const pStatuses = fetchCached('app_statuses', () => getStatuses());
-        
-        const pUsers = fetchCached('app_users', async () => {
-            const res = await fetch(toApiUrl("/general/users"), { headers });
-            if (!res.ok) {
-                sessionStorage.removeItem("app_users");
-                return undefined;
-            }
-            return await res.json();
-        });
-
-        const pSupportUsers = fetchCached('app_support_users', async () => {
-            const res = await fetch(toApiUrl("/general/support-users"), { headers });
-            if (!res.ok) {
-                sessionStorage.removeItem("app_support_users");
-                return undefined;
-            }
-            return await res.json();
-        });
+        const pUsers = fetchCachedUrl<unknown>('app_users', toApiUrl("/general/users"), headers);
+        const pSupportUsers = fetchCachedUrl<unknown>('app_support_users', toApiUrl("/general/support-users"), headers);
 
         // Esperamos TODO en paralelo nativo (Ahorro enorme de milisegundos).
         // Los comentarios (fetchComments) ya se dispararon y se actualizarán en segundo plano sin bloquear la vista principal.
@@ -219,8 +232,8 @@ export const TicketDetail = () => {
         setFiles(filesData || []);
         setStatuses(statusesData || []);
         
-        setUsersList(Array.isArray(usersData) ? usersData : []);
-        setSupportUsers(Array.isArray(supportData) ? supportData : (supportData.data || []));
+        setUsersList(normalizeArrayResponse<ApiUser>(usersData));
+        setSupportUsers(normalizeArrayResponse<ApiUser>(supportData));
 
         if (ticketData) {
             setCurrentStatusId(ticketData.iIdStatus);
@@ -246,33 +259,49 @@ export const TicketDetail = () => {
   // --- POLLING AUTOMÁTICO DE COMENTARIOS ---
   useEffect(() => {
       if (!ticket) return;
-      const intervalId = setInterval(() => { fetchComments(ticket.iIdTask); }, 10000); 
-      return () => clearInterval(intervalId); 
+      const intervalId = setInterval(() => {
+          if (document.visibilityState !== "visible") return;
+          if (commentsPollingInFlightRef.current) return;
+          commentsPollingInFlightRef.current = true;
+          void fetchComments(ticket.iIdTask).finally(() => {
+              commentsPollingInFlightRef.current = false;
+          });
+      }, 10000);
+      return () => clearInterval(intervalId);
   }, [ticket?.iIdTask]);
 
   // --- POLLING AUTOMÁTICO DE ESTATUS ---
   useEffect(() => {
-    if (!ticket) return;
+    const ticketId = ticket?.iIdTask;
+    if (!ticketId) return;
 
     const intervalId = setInterval(async () => {
+        if (document.visibilityState !== "visible") return;
+        const currentTicket = ticketRef.current;
+        if (!currentTicket) return;
+        if (statusPollingInFlightRef.current) return;
+        statusPollingInFlightRef.current = true;
+
         try {
-            const updatedTicket = await getTicketById(ticket.iIdTask);
-            if (updatedTicket && updatedTicket.iIdStatus !== ticket.iIdStatus) {
+            const updatedTicket = await getTicketById(ticketId);
+            if (updatedTicket && updatedTicket.iIdStatus !== currentTicket.iIdStatus) {
                 setTicket(prev => prev ? { ...prev, iIdStatus: updatedTicket.iIdStatus, statusName: updatedTicket.statusName } : prev);
-                if (!hasChanges) {
+                if (!hasChangesRef.current) {
                     setCurrentStatusId(updatedTicket.iIdStatus);
                 }
             }
-            if (updatedTicket && (updatedTicket as any).iIdUserTaskAssigned !== assignedUserId) {
-                const newAssignee = (updatedTicket as any).iIdUserTaskAssigned || 0;
-                setAssignedUserId(newAssignee);
-                if (!hasAssignChanges) setPendingAssignId(newAssignee);
+
+            const serverAssignee = (updatedTicket as any)?.iIdUserTaskAssigned || (updatedTicket as any)?.assignedUserId || 0;
+            if (updatedTicket && serverAssignee !== assignedUserIdRef.current) {
+                setAssignedUserId(serverAssignee);
+                if (!hasAssignChangesRef.current) setPendingAssignId(serverAssignee);
             }
         } catch (error) { console.error("Error al actualizar estatus", error); }
+        finally { statusPollingInFlightRef.current = false; }
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [ticket?.iIdTask, ticket?.iIdStatus, hasChanges, assignedUserId, hasAssignChanges]);
+  }, [ticket?.iIdTask]);
 
   // --- AUTO-SCROLL SUAVE ---
   useEffect(() => {
@@ -306,6 +335,7 @@ export const TicketDetail = () => {
         if (res.ok || res.status === 204) {
             setAssignedUserId(pendingAssignId);
             setHasAssignChanges(false);
+            invalidateTicketsCache();
             await fetchComments(ticket.iIdTask);
         } else {
             alert("Error al asignar el ticket. Verifica tu conexión.");
@@ -494,7 +524,7 @@ export const TicketDetail = () => {
           const authorId = c.ildUser || c.iIdUser;
           const isMine = authorId === currentUserId;
           
-          const foundUser = usersList.find(u => (u.iIdUser === authorId) || (u.ildUser === authorId));
+          const foundUser = usersById.get(Number(authorId));
           const authorName = c.sUser || c.userName || c.employeeName || foundUser?.employeeName || foundUser?.sUser || (isMine ? currentUserName : `Usuario`);
 
           return {
@@ -511,7 +541,7 @@ export const TicketDetail = () => {
       });
 
       return [systemBotMsg, ...dbMessages];
-  }, [ticket, comments, currentUserId, currentUserName, usersList]);
+  }, [ticket, comments, currentUserId, currentUserName, usersById]);
 
   if (isLoading) return <TicketDetailSkeleton />;
   if (!ticket) return <div className="p-10 text-center text-txt-muted">Ticket no encontrado.</div>;
@@ -626,12 +656,12 @@ export const TicketDetail = () => {
                                             <motion.button 
                                                 layout 
                                                 initial={{ scale: 0, opacity: 0, width: 0 }}
-                                                animate={{ scale: 1, opacity: 1, width: 48 }} 
+                                                animate={{ scale: 1, opacity: 1, width: 46 }} 
                                                 exit={{ scale: 0, opacity: 0, width: 0 }}
                                                 transition={{ type: "spring", stiffness: 500, damping: 25 }}
                                                 onClick={handleAssignUser} 
                                                 disabled={isAssigning} 
-                                                className="relative flex items-center justify-center w-12 h-12 min-w-12 min-h-12 aspect-square p-0 rounded-full bg-blue-600 text-white shadow-lg overflow-hidden shrink-0 hover:scale-105"
+                                                className="relative flex items-center justify-center w-[46px] h-[46px] min-w-[46px] min-h-[46px] aspect-square p-0 rounded-full bg-blue-600 text-white shadow-lg overflow-hidden shrink-0 hover:scale-105"
                                             >
                                                 {isAssigning ? (
                                                     <span className="material-symbols-rounded animate-spin text-xl">progress_activity</span>
@@ -662,12 +692,12 @@ export const TicketDetail = () => {
                                         <motion.button 
                                             layout 
                                             initial={{ scale: 0, opacity: 0, width: 0 }}
-                                            animate={{ scale: 1, opacity: 1, width: 48 }} 
+                                            animate={{ scale: 1, opacity: 1, width: 46 }} 
                                             exit={{ scale: 0, opacity: 0, width: 0 }}
                                             transition={{ type: "spring", stiffness: 500, damping: 25 }}
                                             onClick={handleSaveStatus} 
                                             disabled={isSavingStatus} 
-                                            className="relative flex items-center justify-center w-12 h-12 min-w-12 min-h-12 aspect-square p-0 rounded-full bg-black dark:bg-white text-white dark:text-black shadow-lg overflow-hidden shrink-0 hover:scale-105"
+                                            className="relative flex items-center justify-center w-[46px] h-[46px] min-w-[46px] min-h-[46px] aspect-square p-0 rounded-full bg-black dark:bg-white text-white dark:text-black shadow-lg overflow-hidden shrink-0 hover:scale-105"
                                         >
                                             {isSavingStatus ? (
                                                 <span className="material-symbols-rounded animate-spin text-xl">progress_activity</span>
@@ -814,12 +844,12 @@ export const TicketDetail = () => {
                       
                       {/* PREVISUALIZACIÓN DE IMÁGENES A SUBIR */}
                       <AnimatePresence>
-                        {commentImages.length > 0 && (
+                        {commentImagePreviews.length > 0 && (
                             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="flex flex-wrap gap-2 px-1">
-                                {commentImages.map((file, idx) => (
-                                    <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 group shadow-sm">
-                                        <img src={URL.createObjectURL(file)} alt="preview" className="w-full h-full object-cover" />
-                                        <button onClick={() => removeImage(idx)} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-rose-500/80">
+                                {commentImagePreviews.map((preview) => (
+                                    <div key={preview.index} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600 group shadow-sm">
+                                        <img src={preview.url} alt="preview" className="w-full h-full object-cover" />
+                                        <button onClick={() => removeImage(preview.index)} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-rose-500/80">
                                             <span className="material-symbols-rounded text-xl">delete</span>
                                         </button>
                                     </div>

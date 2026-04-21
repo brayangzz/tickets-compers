@@ -181,7 +181,7 @@ export const SessionExpiredModal = () => {
                     {seconds}
                   </motion.span>
                 </AnimatePresence>
-
+        
                 {/* Barra de progreso */}
                 <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-700/70 rounded-full overflow-hidden mt-1">
                   <motion.div

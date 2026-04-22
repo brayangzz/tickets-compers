@@ -111,7 +111,12 @@ export const TaskDetail = () => {
             if (cached !== null) return cached;
 
             const data = await fetcher();
-            if (data !== undefined) {
+            const shouldPersist =
+                data !== undefined &&
+                data !== null &&
+                (!Array.isArray(data) || data.length > 0);
+
+            if (shouldPersist) {
                 sessionStorage.setItem(key, JSON.stringify(data));
             } else {
                 sessionStorage.removeItem(key);

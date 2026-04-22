@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config/api";
+import { getStoredToken } from "../utils/auth";
 
 const API_URL = API_BASE_URL;
 
@@ -117,7 +118,7 @@ const buildTicketFallbackPayload = (payload: UpdateTaskPayload) => ({
 });
 
 export const getPersonalTasks = async (): Promise<PersonalTask[]> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return [];
 
   try {
@@ -137,7 +138,7 @@ export const getPersonalTasks = async (): Promise<PersonalTask[]> => {
 
 // --- CORRECCIÓN: Ahora devuelve <any> (el JSON de la API) en lugar de <boolean> ---
 export const createPersonalTask = async (task: CreateTaskPayload): Promise<any> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return null;
 
   try {
@@ -160,7 +161,7 @@ export const createPersonalTask = async (task: CreateTaskPayload): Promise<any> 
 };
 
 export const updatePersonalTask = async (id: number, payload: UpdateTaskPayload): Promise<boolean> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return false;
 
   try {
@@ -231,7 +232,7 @@ export const updatePersonalTask = async (id: number, payload: UpdateTaskPayload)
 };
 
 export const deletePersonalTask = async (id: number): Promise<boolean> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return false;
 
   try {
@@ -251,7 +252,8 @@ export const deletePersonalTask = async (id: number): Promise<boolean> => {
 
 export const createAssignedTask = async (payload: any) => {
     try {
-        const token = localStorage.getItem('token');
+        const token = getStoredToken();
+        if (!token) return null;
         const response = await fetch(`${API_URL}/tasks/assigned`, {
             method: "POST",
             headers: {

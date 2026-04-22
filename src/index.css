@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src:
+    url("@fontsource/material-symbols-rounded/files/material-symbols-rounded-latin-400-normal.woff2") format("woff2"),
+    url("@fontsource/material-symbols-rounded/files/material-symbols-rounded-latin-400-normal.woff") format("woff");
+}
+
 /* 🔥 ESTO ES LO ÚNICO QUE FALTABA: */
 /* Le dice a Tailwind v4 que active el modo 'dark:' cuando exista la clase .dark en el HTML */
 @custom-variant dark (&:where(.dark, .dark *));

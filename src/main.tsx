@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
-import "@fontsource/material-symbols-rounded/400.css";
 import materialSymbolsRoundedWoff2Url from "@fontsource/material-symbols-rounded/files/material-symbols-rounded-latin-400-normal.woff2?url";
 import { API_BASE_URL, LEGACY_API_BASE_URL } from "./config/api";
 import { router } from "./router";
@@ -10,6 +9,7 @@ import {
   SessionExpiredModal,
   triggerSessionExpired,
 } from "./components/modals/SessionExpiredModal";
+import { getStoredToken } from "./utils/auth";
 
 const originalFetch = window.fetch;
 let hasTriggeredSessionExpired = false;
@@ -18,8 +18,9 @@ const isLocalhost =
   window.location.hostname === "127.0.0.1";
 const runtimeApiBaseUrl = isLocalhost ? API_BASE_URL : "/api";
 const ICON_SELECTOR = ".material-symbols-rounded";
+const MATERIAL_SYMBOLS_FAMILY = "Material Symbols Rounded";
 const MATERIAL_SYMBOLS_PENDING_CLASS = "ms-icons-pending";
-const MATERIAL_SYMBOLS_FONT_DESCRIPTOR = '24px "Material Symbols Rounded"';
+const MATERIAL_SYMBOLS_FONT_DESCRIPTOR = `24px "${MATERIAL_SYMBOLS_FAMILY}"`;
 const MATERIAL_SYMBOLS_PROBE_TOKEN = "arrow_forward";
 
 const preloadMaterialSymbols = () => {
@@ -38,52 +39,46 @@ const preloadMaterialSymbols = () => {
 
 const markMaterialSymbolsReady = () => {
   const root = document.documentElement;
-  const clearPending = () => root.classList.remove(MATERIAL_SYMBOLS_PENDING_CLASS);
-  const isFontReady = () =>
-    document.fonts.check(MATERIAL_SYMBOLS_FONT_DESCRIPTOR, MATERIAL_SYMBOLS_PROBE_TOKEN);
+  const setPending = (pending: boolean) => {
+    root.classList.toggle(MATERIAL_SYMBOLS_PENDING_CLASS, pending);
+  };
 
   if (!("fonts" in document)) {
-    clearPending();
+    setPending(false);
     return;
   }
 
-  if (isFontReady()) {
-    clearPending();
-    return;
-  }
+  const fontSet = document.fonts;
+  const normalizeFamily = (family: string) => family.replace(/['"]/g, "").trim();
+  const isMaterialFace = (face: FontFace) => normalizeFamily(face.family) === MATERIAL_SYMBOLS_FAMILY;
+  const isFontReady = () =>
+    fontSet.check(MATERIAL_SYMBOLS_FONT_DESCRIPTOR, MATERIAL_SYMBOLS_PROBE_TOKEN);
+  const syncPendingState = () => setPending(!isFontReady());
+  const isMaterialEvent = (event: Event) =>
+    "fontfaces" in event &&
+    Array.isArray((event as FontFaceSetLoadEvent).fontfaces) &&
+    (event as FontFaceSetLoadEvent).fontfaces.some(isMaterialFace);
 
-  const probe = document.createElement("span");
-  probe.className = "material-symbols-rounded";
-  probe.textContent = MATERIAL_SYMBOLS_PROBE_TOKEN;
-  probe.setAttribute("aria-hidden", "true");
-  probe.style.position = "fixed";
-  probe.style.left = "-9999px";
-  probe.style.top = "-9999px";
-  probe.style.opacity = "0";
-  probe.style.pointerEvents = "none";
-  document.body.appendChild(probe);
-
-  const cleanup = () => {
-    window.clearInterval(pollIntervalId);
-    document.fonts.removeEventListener("loadingdone", checkAndFinish);
-    document.fonts.removeEventListener("loadingerror", checkAndFinish);
-    probe.remove();
+  const handleLoading = (event: Event) => {
+    if (isMaterialEvent(event)) {
+      setPending(true);
+    }
   };
 
-  const checkAndFinish = () => {
-    if (!isFontReady()) return;
-    cleanup();
-    clearPending();
+  const handleLoadingDone = (event: Event) => {
+    if (!isMaterialEvent(event)) return;
+    syncPendingState();
   };
 
-  document.fonts.addEventListener("loadingdone", checkAndFinish);
-  document.fonts.addEventListener("loadingerror", checkAndFinish);
-  document.fonts
+  fontSet.addEventListener("loading", handleLoading);
+  fontSet.addEventListener("loadingdone", handleLoadingDone);
+  fontSet.addEventListener("loadingerror", handleLoadingDone);
+
+  fontSet
     .load(MATERIAL_SYMBOLS_FONT_DESCRIPTOR, MATERIAL_SYMBOLS_PROBE_TOKEN)
-    .then(checkAndFinish)
+    .then(syncPendingState)
     .catch(() => {});
-
-  const pollIntervalId = window.setInterval(checkAndFinish, 250);
+  syncPendingState();
 };
 
 const markAsNoTranslate = (element: Element | null) => {
@@ -242,8 +237,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const response = await originalFetch(rewrittenInput, init);
 
   if (
-    response.status === 401 &&
+    (response.status === 401 || response.status === 403) &&
+    Boolean(getStoredToken()) &&
     !rewrittenUrl.includes("/login") &&
+    window.location.pathname !== "/login" &&
     !hasTriggeredSessionExpired
   ) {
     hasTriggeredSessionExpired = true;

@@ -22,6 +22,7 @@ import { ExportTicketModal } from "../components/modals/ExportTicketModal";
 import { getInitials, getAvatarGradient } from "../utils/user";
 import { getStatusConfig } from "../utils/status";
 import { fetchCached } from "../utils/cache";
+import { getUserId, getUserRoleId } from "../utils/auth";
 
 export const Tickets = () => {
   const navigate = useNavigate();
@@ -55,12 +56,15 @@ export const Tickets = () => {
   // --- USUARIO Y ROLES ---
   const userObj = getLocalStorageJSON<{
     iIdRol?: number | string;
+    ildRol?: number | string;
+    idRole?: number | string;
     roleId?: number | string;
     iIdUser?: number | string;
+    ildUser?: number | string;
     idUser?: number | string;
   }>("user", {});
-  const isDani = Number(userObj.iIdRol || userObj.roleId || 0) === 32;
-  const currentUserId = Number(userObj.iIdUser || userObj.idUser || 0);
+  const isDani = getUserRoleId(userObj) === 32;
+  const currentUserId = getUserId(userObj);
 
   const pageTitle = isDani ? "Gestión de Tickets" : "Mis Reportes";
   const pageSubtitle = isDani

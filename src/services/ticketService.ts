@@ -1,4 +1,6 @@
 import { API_BASE_URL } from "../config/api";
+import { getStoredToken, getUserId } from "../utils/auth";
+import { getLocalStorageJSON } from "../utils/storage";
 
 const API_URL = API_BASE_URL;
 const TICKETS_CACHE_PREFIX = "app_tickets_cache_v1_";
@@ -53,30 +55,19 @@ export interface CreateTicketPayload {
 }
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
+  if (!token) return undefined;
+
   return {
-    'Content-Type': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : ''
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
   };
 };
 
 const getTicketsCacheKey = () => {
-  const userRaw = localStorage.getItem("user");
-  let userId = "anonymous";
-
-  if (userRaw) {
-    try {
-      const parsed = JSON.parse(userRaw) as {
-        iIdUser?: number | string;
-        idUser?: number | string;
-        ildUser?: number | string;
-      };
-      const resolvedId = Number(parsed.iIdUser || parsed.idUser || parsed.ildUser || 0);
-      if (resolvedId > 0) userId = String(resolvedId);
-    } catch {
-      userId = "anonymous";
-    }
-  }
+  const parsedUser = getLocalStorageJSON<Record<string, unknown> | null>("user", null);
+  const resolvedUserId = getUserId(parsedUser || undefined);
+  const userId = resolvedUserId > 0 ? String(resolvedUserId) : "anonymous";
 
   return `${TICKETS_CACHE_PREFIX}${userId}`;
 };
@@ -125,7 +116,7 @@ export const invalidateTicketsCache = () => {
 // --- CRUD PRINCIPAL ---
 
 export const getTickets = async (): Promise<Ticket[]> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) {
     invalidateTicketsCache();
     return [];
@@ -163,7 +154,7 @@ export const getTickets = async (): Promise<Ticket[]> => {
 };
 
 export const getTicketById = async (id: number): Promise<Ticket | null> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return null;
   try {
     const response = await fetch(`${API_URL}/tickets/${id}`, { method: "GET", headers: getAuthHeaders() });
@@ -174,7 +165,7 @@ export const getTicketById = async (id: number): Promise<Ticket | null> => {
 };
 
 export const createTicket = async (ticket: CreateTicketPayload): Promise<any> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return null;
   try {
     const response = await fetch(`${API_URL}/tickets`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(ticket) });
@@ -186,7 +177,7 @@ export const createTicket = async (ticket: CreateTicketPayload): Promise<any> =>
 };
 
 export const updateTicket = async (id: number, data: any): Promise<boolean> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return false;
   try {
     const response = await fetch(`${API_URL}/tickets/${id}`, { method: "PUT", headers: getAuthHeaders(), body: JSON.stringify(data) });
@@ -196,7 +187,7 @@ export const updateTicket = async (id: number, data: any): Promise<boolean> => {
 };
 
 export const deleteTicket = async (id: number): Promise<boolean> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return false;
   try {
     const response = await fetch(`${API_URL}/tickets/${id}`, {
@@ -215,7 +206,7 @@ export const deleteTicket = async (id: number): Promise<boolean> => {
 // --- ARCHIVOS ---
 
 export const getTicketFiles = async (taskId: number): Promise<any[]> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return [];
   try {
     const response = await fetch(`${API_URL}/task-files/${taskId}`, { method: "GET", headers: getAuthHeaders() });
@@ -226,7 +217,7 @@ export const getTicketFiles = async (taskId: number): Promise<any[]> => {
 };
 
 export const uploadTicketFile = async (taskId: number, file: File): Promise<boolean> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return false;
   try {
     const formData = new FormData();

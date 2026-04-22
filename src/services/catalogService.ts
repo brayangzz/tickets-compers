@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config/api";
+import { getStoredToken } from "../utils/auth";
 
 const API_URL = API_BASE_URL;
 
@@ -32,7 +33,7 @@ export interface TaskType {
 // --- HELPER GENÉRICO ---
 
 const fetchCatalog = async <T>(endpoint: string): Promise<T[]> => {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   if (!token) return [];
 
   try {

@@ -1,5 +1,11 @@
 import { getSessionStorageJSON } from "./storage";
 
+const shouldPersistCache = (value: unknown) => {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return true;
+};
+
 export async function fetchCached<T = unknown>(
   key: string,
   fetcher: () => Promise<T>,
@@ -9,7 +15,7 @@ export async function fetchCached<T = unknown>(
 
   const data = await fetcher();
 
-  if (data !== undefined) {
+  if (shouldPersistCache(data)) {
     sessionStorage.setItem(key, JSON.stringify(data));
   } else {
     sessionStorage.removeItem(key);
@@ -41,6 +47,11 @@ export async function fetchCachedUrl<T = unknown>(
     return data;
   }
 
-  sessionStorage.setItem(key, JSON.stringify(data));
+  if (shouldPersistCache(data)) {
+    sessionStorage.setItem(key, JSON.stringify(data));
+  } else {
+    sessionStorage.removeItem(key);
+  }
+
   return data;
 }

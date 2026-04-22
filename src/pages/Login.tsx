@@ -3,26 +3,48 @@ import { useNavigate } from "react-router-dom";
 import { loginUser } from "../services/authService";
 import { getRoles } from "../services/roleService";
 import { motion, AnimatePresence } from "framer-motion";
-import { getLocalStorageJSON } from "../utils/storage";
+import { clearAppSessionData, clearAuthStoragePreserveTheme } from "../utils/storage";
 import { prefetchPostLoginRoutes } from "../utils/routePrefetch";
-
-type LoginUser = {
-  iIdRol?: number | string;
-  ildRol?: number | string;
-  idRole?: number | string;
-};
+import { getUserRoleId, normalizeAuthUser, readStoredSession } from "../utils/auth";
+import { toApiUrl } from "../config/api";
 
 export const Login = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const user = getLocalStorageJSON<LoginUser | null>("user", null);
-    if (token && user) {
-      const roleId = Number(user.iIdRol || user.ildRol || user.idRole || 0);
-      prefetchPostLoginRoutes(roleId);
-      navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
-    }
+    let cancelled = false;
+
+    const validateStoredSession = async () => {
+      const { token, user, isValid } = readStoredSession();
+      if (!isValid || !token || !user) return;
+
+      try {
+        const response = await fetch(toApiUrl("/general/status"), {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          clearAuthStoragePreserveTheme();
+          return;
+        }
+
+        if (cancelled) return;
+
+        const roleId = getUserRoleId(user);
+        prefetchPostLoginRoutes(roleId);
+        navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
+      } catch {
+        // Error de red: dejamos el login habilitado para reintento manual.
+      }
+    };
+
+    void validateStoredSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -64,16 +86,23 @@ export const Login = () => {
     setErrorMessage(null);
     try {
       const result = await loginUser(formData.email, formData.password);
+      const normalizedUser = normalizeAuthUser(result);
+      const token = result.sToken?.trim();
+
+      if (!token) {
+        throw new Error("Token de sesión inválido.");
+      }
       try {
         const rolesDB = await getRoles();
         const rolesMap: Record<string, number> = {};
         rolesDB.forEach(r => { if (r.sRol) rolesMap[r.sRol.toUpperCase()] = r.iIdRol; });
         localStorage.setItem("rolesMap", JSON.stringify(rolesMap));
       } catch { /* no crítico */ }
-      localStorage.setItem("token", result.sToken);
-      localStorage.setItem("user", JSON.stringify(result));
+      clearAppSessionData();
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
       localStorage.setItem("isAuthenticated", "true");
-      const roleId = Number(result.iIdRol || result.ildRol || result.idRole || 0);
+      const roleId = getUserRoleId(normalizedUser);
       prefetchPostLoginRoutes(roleId);
       navigate([32].includes(roleId) ? "/" : "/my-tasks", { replace: true });
     } catch {
